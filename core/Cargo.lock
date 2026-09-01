@@ -204,6 +204,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
+name = "dancechess-core"
+version = "0.1.0"
+dependencies = [
+ "pgn-reader",
+ "rusqlite",
+ "shakmaty",
+ "thiserror",
+ "uniffi",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -354,17 +365,6 @@ name = "log"
 version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
-
-[[package]]
-name = "macbase-core"
-version = "0.1.0"
-dependencies = [
- "pgn-reader",
- "rusqlite",
- "shakmaty",
- "thiserror",
- "uniffi",
-]
 
 [[package]]
 name = "memchr"

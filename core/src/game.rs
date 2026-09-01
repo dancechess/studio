@@ -620,7 +620,7 @@ mod tests {
     #[test]
     fn round_trip_fixture_with_deep_variations() {
         let pgn = std::fs::read_to_string(
-            concat!(env!("CARGO_MANIFEST_DIR"), "/../fixtures/repertoire_sample.pgn"),
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../fixtures/opera_annotated.pgn"),
         )
         .unwrap();
         let game = Game::from_pgn(pgn).unwrap();

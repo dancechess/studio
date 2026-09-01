@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
-#if canImport(MacBaseCore)
-import MacBaseCore
+#if canImport(DanceChessCore)
+import DanceChessCore
 #endif
 
 /// Handle the main window keeps on the table for cross-pane coordination

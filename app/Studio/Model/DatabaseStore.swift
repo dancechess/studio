@@ -1,14 +1,14 @@
 import CryptoKit
 import Foundation
 import Observation
-#if canImport(MacBaseCore)
-import MacBaseCore
+#if canImport(DanceChessCore)
+import DanceChessCore
 #endif
 
 /// The PGN file is the source of truth; SQLite is a per-file speed cache
 /// (fast paging for 100k-game lists, opening-tree index). Opening a PGN
 /// replaces the list: each file (or multi-selection) gets its own cache db
-/// under `<Application Support>/MacBase/caches/`, rebuilt only when the
+/// under `<Application Support>/DCStudio/caches/`, rebuilt only when the
 /// source file is newer than the cache. Edits (update_game) land in the
 /// cache — they survive reopen until the source PGN itself changes.
 @Observable
@@ -67,6 +67,7 @@ final class DatabaseStore {
     static let lastSelectedGameKey = "lastSelectedGameId"
 
     private init() {
+        Self.migrateLegacyStorage()
         // reopen the last cache so the app starts where it left off; the
         // freshness check against sources only runs on an explicit Open
         let defaults = UserDefaults.standard
@@ -87,6 +88,21 @@ final class DatabaseStore {
             statusText = "Open a PGN file to begin"
         }
         recentFiles = defaults.stringArray(forKey: Self.recentFilesKey) ?? []
+    }
+
+    /// One-time move of the pre-rename storage directory (MacBase →
+    /// DCStudio), so existing caches survive; cached-file names are keyed
+    /// by source path, so reopening the same PGN hits them instantly.
+    private static func migrateLegacyStorage() {
+        guard let support = try? FileManager.default
+            .url(for: .applicationSupportDirectory, in: .userDomainMask,
+                 appropriateFor: nil, create: true) else { return }
+        let legacy = support.appendingPathComponent("MacBase", isDirectory: true)
+        let home = support.appendingPathComponent("DCStudio", isDirectory: true)
+        if FileManager.default.fileExists(atPath: legacy.path),
+           !FileManager.default.fileExists(atPath: home.path) {
+            try? FileManager.default.moveItem(at: legacy, to: home)
+        }
     }
 
     func clearRecents() {
@@ -315,10 +331,10 @@ final class DatabaseStore {
 
     /// One cache db per source selection, keyed by the full path set.
     private static func cacheURL(for urls: [URL]) throws -> URL {
-        let dir = try FileManager.default
+        let support = try FileManager.default
             .url(for: .applicationSupportDirectory, in: .userDomainMask,
                  appropriateFor: nil, create: true)
-            .appendingPathComponent("MacBase/caches", isDirectory: true)
+        let dir = support.appendingPathComponent("DCStudio/caches", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let key = urls.map(\.path).sorted().joined(separator: "\n")
         let hex = SHA256.hash(data: Data(key.utf8))

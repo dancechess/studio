@@ -1,7 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
-#if canImport(MacBaseCore)
-import MacBaseCore
+#if canImport(DanceChessCore)
+import DanceChessCore
 #endif
 
 /// Standalone game window (⌘-double-click from the list, or 新对局).
@@ -121,7 +121,7 @@ struct GameWindow: View {
 
     /// Returns true when the event was consumed (keys per NOTATION-VIEW.md).
     private func handleKey(_ event: NSEvent) -> Bool {
-        if ProcessInfo.processInfo.environment["MACBASE_KEY_DEBUG"] != nil {
+        if ProcessInfo.processInfo.environment["DCS_KEY_DEBUG"] != nil {
             print("keyDown code=\(event.keyCode) window=\(event.window === hostWindow)")
         }
         guard event.window === hostWindow else { return false }

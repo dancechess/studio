@@ -39,7 +39,7 @@ extension FocusedValues {
 /// Menu bar (standard Mac experience per NOTATION-VIEW.md): shortcuts for
 /// discrete commands live here; navigation/annotation keys stay in the
 /// per-window event monitor.
-struct MacBaseCommands: Commands {
+struct StudioCommands: Commands {
     @FocusedValue(\.windowActions) private var actions
 
     var body: some Commands {
@@ -99,7 +99,7 @@ struct MacBaseCommands: Commands {
 }
 
 /// Forces activation so keyboard focus lands on us even when launched as a
-/// bare executable (`swift run MacBaseApp`, no bundle): otherwise the window
+/// bare executable (`swift run StudioApp`, no bundle): otherwise the window
 /// floats on top but the terminal keeps receiving the key presses.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -150,7 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @main
-struct MacBaseApp: App {
+struct StudioApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
@@ -158,7 +158,7 @@ struct MacBaseApp: App {
         WindowGroup {
             MainWindow()
         }
-        .commands { MacBaseCommands() }
+        .commands { StudioCommands() }
         // standalone game windows (⌘-double-click / 新对局); -1 = blank board
         WindowGroup(id: "game", for: Int64.self) { $gameId in
             GameWindow(gameId: gameId)

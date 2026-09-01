@@ -248,7 +248,7 @@ mod tests {
     #[test]
     fn every_move_token_is_clickable_and_parens_balance() {
         let pgn = std::fs::read_to_string(
-            concat!(env!("CARGO_MANIFEST_DIR"), "/../fixtures/repertoire_sample.pgn"),
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../fixtures/opera_annotated.pgn"),
         )
         .unwrap();
         let game = Game::from_pgn(pgn).unwrap();

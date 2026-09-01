@@ -1,7 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
-#if canImport(MacBaseCore)
-import MacBaseCore
+#if canImport(DanceChessCore)
+import DanceChessCore
 #endif
 
 /// The single main window: board + notation on top, the database's game
@@ -81,10 +81,10 @@ struct MainWindow: View {
         })
         .onAppear {
             keyMonitor.install { handleKey($0) }
-            // dev hook (like MACBASE_KEY_DEBUG): open the engine panel on
+            // dev hook (like DCS_KEY_DEBUG): open the engine panel on
             // launch and jump to the game's end so smoke runs can screenshot
             // live analysis without pressing ⌘E (engine idles at the root)
-            if ProcessInfo.processInfo.environment["MACBASE_AUTO_ENGINE"] != nil {
+            if ProcessInfo.processInfo.environment["DCS_AUTO_ENGINE"] != nil {
                 engine.togglePanel(target: session.highlightedFen)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                     session.toEnd()
@@ -92,17 +92,17 @@ struct MainWindow: View {
             }
             // dev hook: open a PGN on launch (exercises the cache path
             // end-to-end without driving the file dialog)
-            if let path = ProcessInfo.processInfo.environment["MACBASE_AUTO_OPEN"] {
+            if let path = ProcessInfo.processInfo.environment["DCS_AUTO_OPEN"] {
                 store.openPgn([URL(fileURLWithPath: path)])
             }
             // dev hook: pop the game-info sheet (layout screenshots)
-            if ProcessInfo.processInfo.environment["MACBASE_AUTO_INFO"] != nil {
+            if ProcessInfo.processInfo.environment["DCS_AUTO_INFO"] != nil {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                     showSaveSheet = true
                 }
             }
             // dev hook: dump the menu bar to a file (wiring verification)
-            if let path = ProcessInfo.processInfo.environment["MACBASE_DEBUG_MENU"] {
+            if let path = ProcessInfo.processInfo.environment["DCS_DEBUG_MENU"] {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                     var out = ""
                     for menu in NSApp.mainMenu?.items ?? [] {
@@ -115,19 +115,19 @@ struct MainWindow: View {
                 }
             }
             // dev hook: bump MultiPV programmatically (button diagnosis)
-            if ProcessInfo.processInfo.environment["MACBASE_AUTO_MPV"] != nil {
+            if ProcessInfo.processInfo.environment["DCS_AUTO_MPV"] != nil {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
                     engine.setMultiPV(engine.multiPV + 1)
                 }
             }
             // dev hook: flip the board (screenshots)
-            if ProcessInfo.processInfo.environment["MACBASE_AUTO_FLIP"] != nil {
+            if ProcessInfo.processInfo.environment["DCS_AUTO_FLIP"] != nil {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                     session.toggleFlip()
                 }
             }
             // dev hook: exercise M5 annotations (screenshots)
-            if ProcessInfo.processInfo.environment["MACBASE_AUTO_M5"] != nil {
+            if ProcessInfo.processInfo.environment["DCS_AUTO_M5"] != nil {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                     session.toEnd()
                     session.applyNag(1) // "!"
@@ -139,7 +139,7 @@ struct MainWindow: View {
                 }
             }
             // dev hook: open reference mode and step one move (screenshots)
-            if ProcessInfo.processInfo.environment["MACBASE_AUTO_TREE"] != nil {
+            if ProcessInfo.processInfo.environment["DCS_AUTO_TREE"] != nil {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                     tree.toggle(fen: session.fen)
                 }
@@ -178,7 +178,7 @@ struct MainWindow: View {
                 }
             }
         }
-        .navigationTitle(store.sourceName.map { "MacBase — \($0)" } ?? "MacBase")
+        .navigationTitle(store.sourceName.map { "DC Studio — \($0)" } ?? "DC Studio")
         .focusedSceneValue(\.windowActions, WindowActions(
             openPgn: { showImporter = true },
             newPgnFile: { newPgnFile() },
@@ -396,7 +396,7 @@ struct MainWindow: View {
     // MARK: keyboard
 
     private func handleKey(_ event: NSEvent) -> Bool {
-        if ProcessInfo.processInfo.environment["MACBASE_KEY_DEBUG"] != nil {
+        if ProcessInfo.processInfo.environment["DCS_KEY_DEBUG"] != nil {
             print("keyDown code=\(event.keyCode) engaged=\(engaged) window=\(event.window === hostWindow)")
         }
         guard event.window === hostWindow else { return false }

@@ -1,6 +1,6 @@
 import SwiftUI
-#if canImport(MacBaseCore)
-import MacBaseCore
+#if canImport(DanceChessCore)
+import DanceChessCore
 #endif
 
 /// Reference mode (ChessBase-style): move statistics for the current

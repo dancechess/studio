@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Assembles dist/MacBase.app from the SPM release build — no Xcode needed.
+# Assembles "dist/DC Studio.app" from the SPM release build — no Xcode needed.
 # Ad-hoc signed; for public distribution re-sign with a Developer ID and
 # notarize (xcrun notarytool, present in the Command Line Tools).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP="$ROOT/dist/MacBase.app"
+APP="$ROOT/dist/DC Studio.app"
 VERSION="0.1.0"
 
 "$ROOT/scripts/build-core.sh" >/dev/null
@@ -13,17 +13,17 @@ VERSION="0.1.0"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$ROOT/app/.build/release/MacBaseApp" "$APP/Contents/MacOS/MacBase"
+cp "$ROOT/app/.build/release/StudioApp" "$APP/Contents/MacOS/DCStudio"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key><string>MacBase</string>
-    <key>CFBundleDisplayName</key><string>MacBase</string>
-    <key>CFBundleIdentifier</key><string>com.dancechess.MacBase</string>
-    <key>CFBundleExecutable</key><string>MacBase</string>
+    <key>CFBundleName</key><string>DC Studio</string>
+    <key>CFBundleDisplayName</key><string>DC Studio</string>
+    <key>CFBundleIdentifier</key><string>com.dancechess.DCStudio</string>
+    <key>CFBundleExecutable</key><string>DCStudio</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>$VERSION</string>
@@ -31,7 +31,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>LSApplicationCategoryType</key><string>public.app-category.board-games</string>
-    <key>CFBundleIconFile</key><string>MacBase</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>
@@ -44,11 +44,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-cp "$ROOT/assets/MacBase.icns" "$APP/Contents/Resources/MacBase.icns"
-
 # SPM resource bundle (piece images): Bundle.module looks for it inside
 # Contents/Resources of the enclosing app
-cp -R "$ROOT/app/.build/release/MacBaseDev_MacBaseApp.bundle" "$APP/Contents/Resources/"
+cp -R "$ROOT/app/.build/release/DanceChessStudio_StudioApp.bundle" "$APP/Contents/Resources/"
+
+cp "$ROOT/assets/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 # bundled engine: the analysis panel probes Contents/Resources first
 # (the sandboxed app can't read /opt/homebrew); GPL binary, ships as-is

@@ -361,7 +361,7 @@ impl Database {
         let rows = stmt
             .query_map([], |r| r.get::<_, String>(0))
             .map_err(db_err)?;
-        let tmp = format!("{path}.macbase-tmp");
+        let tmp = format!("{path}.dcstudio-tmp");
         let mut out = std::io::BufWriter::new(std::fs::File::create(&tmp).map_err(db_err)?);
         for row in rows {
             let pgn = row.map_err(db_err)?;
@@ -586,7 +586,7 @@ mod tests {
 
     fn temp_db() -> (Database, std::path::PathBuf) {
         let path = std::env::temp_dir().join(format!(
-            "macbase-test-{}-{}.db",
+            "dcstudio-test-{}-{}.db",
             std::process::id(),
             unique()
         ));
@@ -596,7 +596,7 @@ mod tests {
 
     fn import_str(db: &Database, pgn: &str) -> ImportStats {
         let path = std::env::temp_dir().join(format!(
-            "macbase-test-{}-{}.pgn",
+            "dcstudio-test-{}-{}.pgn",
             std::process::id(),
             unique()
         ));
@@ -714,7 +714,7 @@ mod tests {
 
         // write-back: the regenerated file reimports identically
         let out = std::env::temp_dir().join(format!(
-            "macbase-test-out-{}-{}.pgn",
+            "dcstudio-test-out-{}-{}.pgn",
             std::process::id(),
             unique()
         ));
@@ -790,7 +790,7 @@ mod tests {
         let (db, path) = temp_db();
         let stats = db
             .import_pgn_file(
-                concat!(env!("CARGO_MANIFEST_DIR"), "/../fixtures/repertoire_sample.pgn").into(),
+                concat!(env!("CARGO_MANIFEST_DIR"), "/../fixtures/opera_annotated.pgn").into(),
             )
             .unwrap();
         assert!(stats.imported >= 1);

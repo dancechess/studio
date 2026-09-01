@@ -12,13 +12,13 @@
 | M4 开局树 | Reference 模式:树 + matched 对局列表联动(用户定稿,对标 ChessBase Reference) | ✅ `opening_tree()` + `games_at_position(_count)` | 🔶 完成待验收(2026-09-01):⌘T 开关,右栏下半区(与引擎面板互斥共用),行 = 着法/局数/W-D-L 分段条/白方得分%,点着法即走;开启时底部列表过滤为"到达当前局面的对局"(zobrist,换序转换也算),状态栏显示 "N of M";换列表自动退出 |
 | M5 标注与导出 | 注释/NAG 编辑、变着升删、PGN 导出 | ✅ 编辑 API + 序列化 | 🔶 完成待验收(2026-09-01):`!`/`?` 打 NAG(同类替换、再按取消)、⌫ 确认后删子树、⌘↑ 变着升级、↩/⌘A 注释浮窗(TextEditor,⌘↩ 存/Esc 取消);记谱右键菜单(升/删/注释/Annotate 全套 NAG/Copy PGN/Copy FEN/Export Game as PGN…);⌘S 存库即写回,导出另存单局。菜单栏 Commands 注册暂缓(键位走监视器) |
 
-冒烟:`cd app && swift run MacBaseSmoke`(15 项:UCI 解析、桥的走法/树/
+冒烟:`cd app && swift run StudioSmoke`(18 项:UCI 解析、桥的走法/树/
 令牌/数据库、真 Stockfish 深度 12 MultiPV 2)。
 
 ## Xcode:不再是阻塞项(2026-09-01 验证)
 
 Command Line Tools 足以走完全程:SPM 编译/运行(含 SwiftUI)、
-`scripts/make-app.sh` 产出 ad-hoc 签名的 `dist/MacBase.app`(已验证可
+`scripts/make-app.sh` 产出 ad-hoc 签名的 `dist/"DC Studio.app"`(已验证可
 双击启动),`codesign`/`iconutil`/`hdiutil` 系统自带,连 `notarytool`
 (上线公证用)都在 CLT 里。资源(棋子图、引擎)直接放
 `Contents/Resources/`,不需要 asset catalog。
@@ -37,7 +37,7 @@ Command Line Tools 足以走完全程:SPM 编译/运行(含 SwiftUI)、
 
 写回前自动备份(每文件每次启动首写留 .pgn.bak)、File ▸ Open Recent
 (最近 8 个)、拖 PGN 到窗口打开 + .pgn 文件关联(Finder 双击/拖 Dock)、
-应用图标(Merida 马 + 棋色渐变,assets/MacBase.icns)、启动恢复上次
+应用图标(Merida 马 + 棋色渐变,assets/AppIcon.icns)、启动恢复上次
 查看的对局。
 
 ## MVP 之后(讨论过、未承诺)

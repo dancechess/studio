@@ -1,21 +1,21 @@
 # XcodeGen spec — regenerate the Xcode project with:  xcodegen -s app/project.yml
-name: MacBase
+name: DanceChessStudio
 options:
   bundleIdPrefix: com.dancechess
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
 targets:
-  MacBase:
+  DanceChessStudio:
     type: application
     platform: macOS
     sources:
-      - path: MacBase
+      - path: Studio
         excludes:
           - "Resources/**"
       # folder reference: keeps the pieces/merida/ structure inside
       # Contents/Resources, matching the SPM .copy() layout
-      - path: MacBase/Resources/pieces
+      - path: Studio/Resources/pieces
         type: folder
         buildPhase: resources
       - path: UCIKit
@@ -23,17 +23,17 @@ targets:
         createIntermediateGroups: true
     settings:
       base:
-        PRODUCT_NAME: MacBase
+        PRODUCT_NAME: DC Studio
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         SWIFT_VERSION: "5.10"
         # where the uniffi-generated module.modulemap lives
         SWIFT_INCLUDE_PATHS: $(SRCROOT)/Generated/include
         LIBRARY_SEARCH_PATHS: $(SRCROOT)/../core/target/release
-        OTHER_LDFLAGS: ["-lmacbase_core"]
+        OTHER_LDFLAGS: ["-ldancechess_core"]
         CODE_SIGN_IDENTITY: "-"
         ENABLE_HARDENED_RUNTIME: true
     entitlements:
-      path: MacBase/MacBase.entitlements
+      path: Studio/Studio.entitlements
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.files.user-selected.read-write: true

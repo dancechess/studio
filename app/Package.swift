@@ -10,39 +10,39 @@ let pkgDir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
 let rustLib = "\(pkgDir)/../core/target/release"
 
 let package = Package(
-    name: "MacBaseDev",
+    name: "DanceChessStudio",
     platforms: [.macOS(.v14)],
     targets: [
         // uniffi's C header (copied in by scripts/build-core.sh)
         .target(
-            name: "macbase_coreFFI",
+            name: "dancechess_coreFFI",
             path: "FFI",
             publicHeadersPath: "include"
         ),
         // the generated Swift bindings + the Rust static library
         .target(
-            name: "MacBaseCore",
-            dependencies: ["macbase_coreFFI"],
+            name: "DanceChessCore",
+            dependencies: ["dancechess_coreFFI"],
             path: "Generated",
-            sources: ["macbase_core.swift"],
+            sources: ["dancechess_core.swift"],
             linkerSettings: [
                 .unsafeFlags(["-L\(rustLib)"]),
-                .linkedLibrary("macbase_core"),
+                .linkedLibrary("dancechess_core"),
             ]
         ),
         // UCI engine subprocess management (pure Foundation, no UI)
         .target(name: "UCIKit", path: "UCIKit"),
-        // end-to-end smoke checks:  swift run MacBaseSmoke
+        // end-to-end smoke checks:  swift run StudioSmoke
         .executableTarget(
-            name: "MacBaseSmoke",
-            dependencies: ["MacBaseCore", "UCIKit"],
+            name: "StudioSmoke",
+            dependencies: ["DanceChessCore", "UCIKit"],
             path: "Smoke"
         ),
-        // the SwiftUI app, runnable without a bundle:  swift run MacBaseApp
+        // the SwiftUI app, runnable without a bundle:  swift run StudioApp
         .executableTarget(
-            name: "MacBaseApp",
-            dependencies: ["MacBaseCore", "UCIKit"],
-            path: "MacBase",
+            name: "StudioApp",
+            dependencies: ["DanceChessCore", "UCIKit"],
+            path: "Studio",
             resources: [.copy("Resources/pieces")]
         ),
     ]

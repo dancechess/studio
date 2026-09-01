@@ -27,7 +27,7 @@ UCI 引擎 (Stockfish) ── 独立子进程,Swift 侧 Process+pipe 管理(未�
 
 - 全部用 proc-macro(`#[uniffi::export]`、`#[derive(uniffi::Object/Record/Enum/Error)]`),没有 UDL 文件。
 - 改了导出 API 就跑 `scripts/build-core.sh`:编译 staticlib + 重新生成
-  `app/Generated/macbase_core.swift` 与 modulemap。
+  `app/Generated/dancechess_core.swift` 与 modulemap。
 - **不传递归结构**。树节点以 `u32` id 寻址(0 = 根),Swift 拿扁平的
   `NodeInfo` 记录。id 在删除节点后依然稳定(子树只摘链不回收)。
 - 有状态对象(`Game`、`Database`)内部 `Mutex`,对 Swift 是 `Sendable`。
@@ -60,7 +60,7 @@ positions(zobrist, game_id, move, result)   -- INDEX(zobrist)
 ## Swift 侧(骨架已写,待 Xcode)
 
 - 工程由 XcodeGen 从 `app/project.yml` 生成;pre-build phase 跑
-  build-core.sh,链接 `core/target/release/libmacbase_core.a`。
+  build-core.sh,链接 `core/target/release/libdancechess_core.a`。
 - 沙盒开启,文件访问走 NSOpenPanel(user-selected read-write)。
 - 大列表(棋局列表)用 NSTableView 包 `NSViewRepresentable`,SQLite 分页
   懒加载;SwiftUI `Table` 撑不住十万行。

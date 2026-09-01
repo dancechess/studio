@@ -1,35 +1,70 @@
-# MacBase
+# DC Studio
 
-Mac 原生的棋库应用(ChessBase 的 Mac 替代)。SwiftUI 界面 + Rust 核心
-(走法生成、PGN 变着树、SQLite 棋库、开局树),UCI 引擎(内置 Stockfish)
-子进程分析。
+**A native Mac chess database.** Browse, annotate, analyze and enter games —
+a lightweight, PGN-native alternative to ChessBase, built for players and
+coaches on macOS. Part of the DanceChess family.
 
-文档:[架构](docs/ARCHITECTURE.md) ·
-[着法面板设计](docs/NOTATION-VIEW.md) ·
-[路线图](docs/ROADMAP.md) · 交接说明 [AGENTS.md](AGENTS.md)
+![DC Studio](assets/screenshot.png)
 
-## 结构
+## Features
 
-- `core/` — Rust crate(shakmaty + pgn-reader + rusqlite),通过 UniFFI
-  导出给 Swift。`cargo test` 跑全部核心测试(perft、PGN round-trip)。
-- `app/` — SwiftUI macOS 应用。Xcode 工程由 XcodeGen 从 `app/project.yml`
-  生成(`.xcodeproj` 不进 git)。
-- `scripts/build-core.sh` — 编译 Rust 静态库并重新生成 Swift 绑定到
-  `app/Generated/`(Xcode 构建的 pre-build phase 也会跑它)。
-- `fixtures/` — 测试用真实 PGN(含深层嵌套变着)。
+- **Single-window workflow** — board + notation on top, your game list below.
+  Arrow keys browse games and step through moves without ever touching the
+  mouse; `Enter` dives into a game, `Esc` comes back.
+- **PGN is the source of truth** — open any .pgn and its games *are* the
+  list. Every save writes straight back to the file (atomically, with a
+  `.pgn.bak` safety copy). SQLite is only a per-file cache: a 100k-game
+  file imports in ~2 s and reopens instantly.
+- **Full annotation** — variations (promote/delete), `!`/`?` NAGs, eval
+  symbols, comments, undo/redo. The notation panel renders a ChessBase-style
+  variation tree.
+- **Engine analysis** (⌘E) — bundled Stockfish, MultiPV, eval bar, click an
+  engine line to insert it as a variation. The engine only runs while a move
+  is selected — no idle CPU burn.
+- **Opening reference** (⌘T) — move statistics with W/D/L for the current
+  position across the open file, and the list filters to the games that
+  reach it (transposition-aware).
+- **Game entry** — a blank board, a ChessBase-style save mask, and your
+  scoresheets become clean PGN. Create a new file and build a collection
+  from scratch.
 
-## 首次构建
+## Requirements
 
-1. App Store 安装 Xcode,启动一次接受许可,然后:
-   `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`
-2. `brew install xcodegen`
-3. `xcodegen -s app/project.yml`
-4. `open app/MacBase.xcodeproj`,⌘R 运行。
+- Apple Silicon Mac, macOS 14 (Sonoma) or later
+- To build: Xcode Command Line Tools, Rust, and `brew install stockfish`
+  (full Xcode is *not* required)
 
-只动 Rust 的话不需要 Xcode:`cd core && cargo test`。
+## Building
 
-## 绑定约定
+```bash
+git clone <this repo> && cd <repo>
+./scripts/make-app.sh        # → "dist/DC Studio.app", double-clickable
+```
 
-Rust 侧用 UniFFI proc-macro(`#[uniffi::export]` / `#[derive(uniffi::Object)]`);
-新增 API 后跑 `scripts/build-core.sh` 重新生成 `app/Generated/macbase_core.swift`。
-跨语言不传递递归结构:对局树以节点 id(`u32`)寻址,Swift 拿 `NodeInfo` 记录。
+Development without Xcode:
+
+```bash
+cd core && cargo test        # Rust core: movegen, PGN tree, SQLite (28 tests)
+cd app && swift run StudioSmoke   # end-to-end smoke incl. real Stockfish
+cd app && swift run StudioApp     # run the app from the CLI
+```
+
+An Xcode project is optional: `brew install xcodegen && xcodegen -s app/project.yml`.
+
+## Good to know
+
+- **Saving normalizes your PGN.** DC Studio re-serializes the whole file on
+  save: content (moves, variations, comments, headers) is preserved —
+  round-trip fidelity is test-covered — but formatting will differ from the
+  original. A `.pgn.bak` of the pre-session file sits alongside.
+- Alpha software, tested primarily by its author. Rough edges are tracked in
+  [docs/ROADMAP.md](docs/ROADMAP.md); the architecture lives in
+  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and the notation-panel design
+  in [docs/NOTATION-VIEW.md](docs/NOTATION-VIEW.md).
+
+## License
+
+GPLv3 — see [LICENSE](LICENSE). DC Studio stands on GPL shoulders:
+[Stockfish](https://stockfishchess.org) (bundled engine),
+[shakmaty](https://github.com/niklasf/shakmaty) (move generation),
+and the Merida piece set by Armando Hernandez Marroquin.

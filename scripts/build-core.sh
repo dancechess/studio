@@ -16,17 +16,17 @@ mkdir -p "$GEN"
 # uniffi-bindgen looks up crate metadata from the cwd
 (cd "$CORE" && env -u SDKROOT \
   cargo run --bin uniffi-bindgen -- \
-  generate --library "$CORE/target/$CONFIG/libmacbase_core.dylib" \
+  generate --library "$CORE/target/$CONFIG/libdancechess_core.dylib" \
   --language swift --out-dir "$GEN")
 
 # Xcode wants a modulemap named module.modulemap inside an include dir
 mkdir -p "$GEN/include"
-mv -f "$GEN"/macbase_coreFFI.h "$GEN/include/"
-mv -f "$GEN"/macbase_coreFFI.modulemap "$GEN/include/module.modulemap" 2>/dev/null || true
+mv -f "$GEN"/dancechess_coreFFI.h "$GEN/include/"
+mv -f "$GEN"/dancechess_coreFFI.modulemap "$GEN/include/module.modulemap" 2>/dev/null || true
 
 # the SPM dev harness consumes the same header through its C target
 mkdir -p "$ROOT/app/FFI/include"
-cp -f "$GEN/include/macbase_coreFFI.h" "$ROOT/app/FFI/include/"
+cp -f "$GEN/include/dancechess_coreFFI.h" "$ROOT/app/FFI/include/"
 
-echo "core built: $CORE/target/$CONFIG/libmacbase_core.a"
-echo "bindings:   $GEN/macbase_core.swift"
+echo "core built: $CORE/target/$CONFIG/libdancechess_core.a"
+echo "bindings:   $GEN/dancechess_core.swift"

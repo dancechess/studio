@@ -42,7 +42,7 @@ Rust 变着树 ──> notation_tokens() 令牌流 ──> NSTextView 渲染 + �
 `scrollRangeToVisible`、只改两个 range 的高亮切换——都是 NSTextView 白给的。
 
 - 不可编辑、可选择;每个 Move/MoveNumber/Nag/Comment 的 range 挂自定义
-  attribute `.macbaseNodeID`。
+  attribute `.dcsNodeID`。
 - `mouseDown` → `characterIndexForInsertion` → 读 attribute → 选中节点。
 - 样式:主线粗体;变着按 depth 变灰;注释绿色;当前节点高亮底色。
   高亮切换只对旧/新两个 range 改 attribute,不重排。

@@ -1,6 +1,6 @@
 import SwiftUI
-#if canImport(MacBaseCore)
-import MacBaseCore
+#if canImport(DanceChessCore)
+import DanceChessCore
 #endif
 
 /// ChessBase-style "save mask": the game's header fields. Used both to

@@ -1,7 +1,7 @@
 import Foundation
 import Observation
-#if canImport(MacBaseCore)
-import MacBaseCore
+#if canImport(DanceChessCore)
+import DanceChessCore
 #endif
 
 struct BoardPiece: Equatable {

@@ -1,8 +1,8 @@
 import Foundation
 import Observation
 import UCIKit
-#if canImport(MacBaseCore)
-import MacBaseCore
+#if canImport(DanceChessCore)
+import DanceChessCore
 #endif
 
 /// One displayed engine line (PV rank) of the analysis panel.
@@ -63,7 +63,7 @@ final class EngineSession {
     private var looping = false
     private var generation = 0
 
-    private let debugLog = ProcessInfo.processInfo.environment["MACBASE_ENGINE_DEBUG"] != nil
+    private let debugLog = ProcessInfo.processInfo.environment["DCS_ENGINE_DEBUG"] != nil
 
     /// Bundled engine first (the sandboxed .app can't read /opt/homebrew),
     /// then the usual Homebrew/local paths for bare `swift run`.

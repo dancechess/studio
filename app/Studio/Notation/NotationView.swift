@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
-#if canImport(MacBaseCore)
-import MacBaseCore
+#if canImport(DanceChessCore)
+import DanceChessCore
 #endif
 
 // Design: docs/NOTATION-VIEW.md. The token stream comes from Rust
@@ -10,7 +10,7 @@ import MacBaseCore
 
 extension NSAttributedString.Key {
     /// UInt32 node id carried by every move/number/nag/comment run.
-    static let macbaseNode = NSAttributedString.Key("macbaseNodeID")
+    static let dcsNode = NSAttributedString.Key("dcsNodeID")
 }
 
 struct NotationView: NSViewRepresentable {
@@ -190,18 +190,18 @@ struct NotationView: NSViewRepresentable {
                 needSpace = false
             case .moveNumber:
                 var attrs = moveAttributes(depth: token.depth)
-                attrs[.macbaseNode] = tagged(token)
+                attrs[.dcsNode] = tagged(token)
                 _ = append(token.text, attrs)
                 needSpace = true
             case .move:
                 var attrs = moveAttributes(depth: token.depth)
-                attrs[.macbaseNode] = tagged(token)
+                attrs[.dcsNode] = tagged(token)
                 let range = append(token.text, attrs)
                 if let node = token.nodeId { ranges[node] = range }
                 needSpace = true
             case .nag:
                 var attrs = moveAttributes(depth: token.depth)
-                attrs[.macbaseNode] = tagged(token)
+                attrs[.dcsNode] = tagged(token)
                 _ = append(token.text, attrs)
                 needSpace = true
             case .comment:
@@ -209,7 +209,7 @@ struct NotationView: NSViewRepresentable {
                     .font: NSFont.systemFont(ofSize: 12),
                     .foregroundColor: NSColor.systemGreen,
                 ]
-                attrs[.macbaseNode] = tagged(token)
+                attrs[.dcsNode] = tagged(token)
                 _ = append(token.text, attrs)
                 needSpace = true
             case .paragraphBreak, .closeParen:
@@ -250,7 +250,7 @@ struct NotationView: NSViewRepresentable {
     }
 }
 
-/// Read-only text view that maps clicks to node ids via .macbaseNode.
+/// Read-only text view that maps clicks to node ids via .dcsNode.
 final class NotationTextView: NSTextView {
     var onNodeClick: ((UInt32) -> Void)?
     var onContextMenu: ((UInt32?) -> NSMenu?)?
@@ -262,7 +262,7 @@ final class NotationTextView: NSTextView {
         var node: UInt32?
         if let storage = textStorage {
             for probe in [index, index - 1] where probe >= 0 && probe < storage.length {
-                if let n = storage.attribute(.macbaseNode, at: probe, effectiveRange: nil) as? NSNumber,
+                if let n = storage.attribute(.dcsNode, at: probe, effectiveRange: nil) as? NSNumber,
                    n.uint32Value != 0 {
                     node = n.uint32Value
                     break
@@ -278,7 +278,7 @@ final class NotationTextView: NSTextView {
         let index = characterIndexForInsertion(at: point)
         // an insertion index can sit just past the clicked glyph; probe both sides
         for probe in [index, index - 1] where probe >= 0 && probe < storage.length {
-            if let node = storage.attribute(.macbaseNode, at: probe, effectiveRange: nil) as? NSNumber {
+            if let node = storage.attribute(.dcsNode, at: probe, effectiveRange: nil) as? NSNumber {
                 onNodeClick?(node.uint32Value)
                 return
             }

@@ -1,8 +1,8 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
-#if canImport(MacBaseCore)
-import MacBaseCore
+#if canImport(DanceChessCore)
+import DanceChessCore
 #endif
 
 /// Board + notation (+ engine, when its panel is open) for one game

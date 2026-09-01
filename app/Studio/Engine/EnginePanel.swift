@@ -1,6 +1,6 @@
 import SwiftUI
-#if canImport(MacBaseCore)
-import MacBaseCore
+#if canImport(DanceChessCore)
+import DanceChessCore
 #endif
 
 /// Horizontal evaluation bar under the board (ChessBase style): white's

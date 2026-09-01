@@ -1,9 +1,9 @@
 // End-to-end smoke checks for the Swift half, runnable without Xcode:
-//   cd app && swift run MacBaseSmoke
+//   cd app && swift run StudioSmoke
 // Exercises the Rust bridge (movegen, game tree, notation tokens, database)
 // and a real UCI engine if one is installed.
 import Foundation
-import MacBaseCore
+import DanceChessCore
 import UCIKit
 
 var failures = 0
@@ -31,7 +31,7 @@ let fen = startFen()
 check((try? legalMovesSan(fen: fen))?.count == 20, "bridge: 20 legal moves from startpos")
 
 // --- Rust bridge: game tree + notation ---
-let pgnPath = repoRoot.appendingPathComponent("fixtures/repertoire_sample.pgn")
+let pgnPath = repoRoot.appendingPathComponent("fixtures/opera_annotated.pgn")
 let pgn = try String(contentsOf: pgnPath, encoding: .utf8)
 let game = try Game.fromPgn(pgn: pgn)
 check(game.mainline().count > 10, "bridge: fixture mainline parsed")
@@ -46,7 +46,7 @@ check(scratch.node(id: qxe5).san == "Qxe5+", "bridge: SAN check-suffix normalize
 
 // --- Rust bridge: database + opening tree ---
 let dbPath = FileManager.default.temporaryDirectory
-    .appendingPathComponent("macbase-smoke-\(ProcessInfo.processInfo.processIdentifier).db")
+    .appendingPathComponent("dcstudio-smoke-\(ProcessInfo.processInfo.processIdentifier).db")
 try? FileManager.default.removeItem(at: dbPath)
 let db = try Database.open(path: dbPath.path)
 let stats = try db.importPgnFile(path: pgnPath.path)

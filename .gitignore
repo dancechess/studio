@@ -1,8 +1,8 @@
 .DS_Store
 core/target/
 app/Generated/
-app/MacBase.xcodeproj/
-app/MacBase/MacBase.entitlements
+app/DanceChessStudio.xcodeproj/
+app/Studio/Studio.entitlements
 app/.build/
 app/FFI/include/
 dist/

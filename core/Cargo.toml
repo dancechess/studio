@@ -1,10 +1,10 @@
 [package]
-name = "macbase-core"
+name = "dancechess-core"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "macbase_core"
+name = "dancechess_core"
 crate-type = ["staticlib", "cdylib", "lib"]
 
 [[bin]]
