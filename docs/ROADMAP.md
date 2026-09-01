@@ -6,7 +6,7 @@
 | 里程碑 | 内容 | Rust 半边 | Swift 半边 |
 |---|---|---|---|
 | M0 骨架 | Swift↔Rust 桥打通,界面显示 `legal_moves` | ✅ 完成 | ✅ 桥经 SPM 冒烟端到端验证;Xcode 工程本身待装 Xcode |
-| M1 棋盘与回放 | 棋盘渲染、拖子、着法面板(见 NOTATION-VIEW.md) | ✅ `Game` 树 + `notation_tokens()` | ⏸ 未开始 |
+| M1 棋盘与回放 | 棋盘渲染、拖子、着法面板(见 NOTATION-VIEW.md) | ✅ 树 + 令牌 + 坐标 API | 🔶 第一版可用:棋盘点击走子(自动开变着)、NSTextView 着法面板(点击跳转/高亮/自动滚动/变着缩进)、←→↑↓ 导航、打开/粘贴 PGN。缺:分叉浮窗、拖子、升变选子(现自动后)、Unicode 棋子待换素材 |
 | M2 导入与列表 | PGN → SQLite,NSTableView 分页列表 | ✅ `Database`(10 万局 2.1s) | ⏸ 未开始 |
 | M3 引擎分析 | 评估条、MultiPV、插入变着、打包 Stockfish | (无,UCI 在 Swift 侧) | 🔶 UCIKit 完成(握手/分析/info 解析,真 stockfish 测过);UI 未开始 |
 | M4 开局树 | 树面板 W/D/L 统计,点着法即走 | ✅ `opening_tree()` | ⏸ 未开始 |

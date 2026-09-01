@@ -4,7 +4,7 @@ import SwiftUI
 struct MacBaseApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            GameWindow()
         }
     }
 }

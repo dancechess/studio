@@ -157,6 +157,10 @@ impl GameInner {
         self.nodes[id as usize].comment.clone()
     }
 
+    pub(crate) fn node_parent(&self, id: u32) -> Option<u32> {
+        self.nodes[id as usize].parent
+    }
+
     /// Mainline SANs from the root, in order.
     pub(crate) fn mainline_sans(&self) -> Vec<String> {
         let mut sans = Vec::new();
@@ -339,6 +343,37 @@ impl Game {
         Ok(crate::legal_moves_san(
             Fen::from_position(inner.position_at(id)?, EnPassantMode::Legal).to_string(),
         )?)
+    }
+
+    /// Legal moves with board coordinates at a node (for the board UI).
+    pub fn legal_moves_detailed_at(&self, id: u32) -> Result<Vec<crate::LegalMove>, ChessError> {
+        let inner = self.inner.lock().unwrap();
+        let pos = inner.position_at(id)?;
+        Ok(pos
+            .legal_moves()
+            .iter()
+            .map(|m| crate::position::detailed(&pos, m))
+            .collect())
+    }
+
+    /// Coordinates of the move leading to `id` (None for the root).
+    /// Used for the board's last-move highlight.
+    pub fn move_coords(&self, id: u32) -> Result<Option<crate::LegalMove>, ChessError> {
+        let inner = self.inner.lock().unwrap();
+        let Some(parent) = inner.node_parent(id) else {
+            return Ok(None);
+        };
+        let pos = inner.position_at(parent)?;
+        let san: San = inner
+            .node_san(id)
+            .parse()
+            .map_err(|e| ChessError::InvalidMove {
+                reason: format!("{e}"),
+            })?;
+        let m = san.to_move(&pos).map_err(|e| ChessError::InvalidMove {
+            reason: format!("{e}"),
+        })?;
+        Ok(Some(crate::position::detailed(&pos, &m)))
     }
 
     // --- editing ---
@@ -561,6 +596,17 @@ mod tests {
         let g6 = game.add_move(qh5, "g6".into()).unwrap();
         let qxe5 = game.add_move(g6, "Qxe5".into()).unwrap();
         assert_eq!(game.node(qxe5).san, "Qxe5+");
+    }
+
+    #[test]
+    fn move_coords_for_board_highlight() {
+        let game = Game::from_pgn(SIMPLE.into()).unwrap();
+        let ids = game.mainline();
+        let e4 = game.move_coords(ids[0]).unwrap().unwrap();
+        assert_eq!((e4.from.as_str(), e4.to.as_str()), ("e2", "e4"));
+        assert!(game.move_coords(ROOT_ID).unwrap().is_none());
+        let detailed = game.legal_moves_detailed_at(ids[0]).unwrap();
+        assert!(detailed.iter().any(|m| m.san == "e5" && m.from == "e7"));
     }
 
     #[test]
