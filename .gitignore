@@ -1,0 +1,5 @@
+.DS_Store
+core/target/
+app/Generated/
+app/MacBase.xcodeproj/
+app/MacBase/MacBase.entitlements

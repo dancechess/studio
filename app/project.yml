@@ -1,0 +1,37 @@
+# XcodeGen spec — regenerate the Xcode project with:  xcodegen -s app/project.yml
+name: MacBase
+options:
+  bundleIdPrefix: com.dancechess
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+targets:
+  MacBase:
+    type: application
+    platform: macOS
+    sources:
+      - path: MacBase
+      - path: Generated
+        createIntermediateGroups: true
+    settings:
+      base:
+        PRODUCT_NAME: MacBase
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        SWIFT_VERSION: "5.10"
+        # where the uniffi-generated module.modulemap lives
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/Generated/include
+        LIBRARY_SEARCH_PATHS: $(SRCROOT)/../core/target/release
+        OTHER_LDFLAGS: ["-lmacbase_core"]
+        CODE_SIGN_IDENTITY: "-"
+        ENABLE_HARDENED_RUNTIME: true
+    entitlements:
+      path: MacBase/MacBase.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.files.user-selected.read-write: true
+    preBuildScripts:
+      - name: Build Rust core
+        script: |
+          set -e
+          "$SRCROOT/../scripts/build-core.sh" release
+        basedOnDependencyAnalysis: false

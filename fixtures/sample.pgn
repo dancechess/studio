@@ -1,0 +1,25 @@
+[Event "Sample Tournament"]
+[Site "ChessBase Mac"]
+[Date "2024.01.15"]
+[Round "1"]
+[White "Player One"]
+[Black "Player Two"]
+[Result "1-0"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. O-O Nf6 5. d3 d6 6. Bg5 h6 7. Bh4 g5 8. h3 a6
+9. d3 Na5 10. Bg3 b5 11. c3 Nc6 12. d4 exd4 13. cxd4 Be6 14. Qc2 O-O
+15. Be3 Bxd3 16. Qxd3 Rb8 17. Rfe1 a5 18. a4 b4 19. axb5 Nxb5 20. Rxe6 fxe6
+21. Qxe6+ Kf7 22. Qe5+ Kf8 23. Qh8+ 1-0
+
+[Event "Sample Tournament"]
+[Site "ChessBase Mac"]
+[Date "2024.01.15"]
+[Round "2"]
+[White "Player Two"]
+[Black "Player One"]
+[Result "0-1"]
+
+1. e4 e5 2. Nf3 d6 3. d4 Nf6 4. Nc3 Bg4 5. h3 Bh5 6. dxe5 Nxe4 7. Qd4 Nf6 8. Bc4 Be7
+9. O-O O-O 10. Be3 h6 11. Nxe5 Bxe3 12. fxe3 d5 13. Bd3 g5 14. Qf3 Bxd3
+15. Rxf3 Rf8 16. Raf1 Rxf3 17. gxf3 Kg8 18. Kg2 Qd5 19. h4 Qe4
+20. Kh3 Rf8 21. Rg1 Rf2 22. Rxf2 Qxf2 23. Kh1 Qf3+ 24. Kg1 Qxg3+ 0-1
