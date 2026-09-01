@@ -63,6 +63,14 @@ Rust 变着树 ──> notation_tokens() 令牌流 ──> NSTextView 渲染 + �
 | 回车 / ⌘A | 注释编辑 popover | `set_comment` ✓ |
 
 - 快捷键经菜单栏 Commands 注册(标准 Mac 体验,自动出现在菜单里)。
+  ——**M5 实现时暂缓**:键位仍走 KeyEventMonitor(和方向键一套,原因见
+  AGENTS 坑 9),菜单栏注册留作 polish;右键菜单已实现(NotationView
+  Coordinator 建 NSMenu,右键先选中被点的着)。
+- **单窗口两态(2026-09-01 定,MainWindow)**:上表键位在**研读态**生效。
+  浏览态(焦点在下方列表):↑↓ 选局、←→ 在预览局里前后步、Enter 进入研读态;
+  Esc 从研读态返回列表;**⌥↑/⌥↓ 两态通用换局**(⌘↑ 留给上表的变着升级,
+  别占用);双击列表行 = Game Info 编辑(2026-09-01 用户定的),⌘双击弹
+  独立对局窗。分叉浮窗弹出时其键位在两态下都优先。
 - **注释不做全文内联编辑**(可编辑富文本 = 光标/undo/输入法泥潭,
   ChessBase 也是弹窗):popover 里普通 TextEditor,提交时写回。
 - 右键菜单:升/删变着、加注释、从此处复制 PGN。
