@@ -41,8 +41,9 @@ let package = Package(
         // the SwiftUI app, runnable without a bundle:  swift run MacBaseApp
         .executableTarget(
             name: "MacBaseApp",
-            dependencies: ["MacBaseCore"],
-            path: "MacBase"
+            dependencies: ["MacBaseCore", "UCIKit"],
+            path: "MacBase",
+            resources: [.copy("Resources/pieces")]
         ),
     ]
 )

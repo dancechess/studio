@@ -11,6 +11,13 @@ targets:
     platform: macOS
     sources:
       - path: MacBase
+        excludes:
+          - "Resources/**"
+      # folder reference: keeps the pieces/merida/ structure inside
+      # Contents/Resources, matching the SPM .copy() layout
+      - path: MacBase/Resources/pieces
+        type: folder
+        buildPhase: resources
       - path: UCIKit
       - path: Generated
         createIntermediateGroups: true

@@ -35,8 +35,19 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# resources that ship inside the bundle (piece images, engine) land here later:
-# cp -R "$ROOT/app/Resources/"* "$APP/Contents/Resources/" 2>/dev/null || true
+# SPM resource bundle (piece images): Bundle.module looks for it inside
+# Contents/Resources of the enclosing app
+cp -R "$ROOT/app/.build/release/MacBaseDev_MacBaseApp.bundle" "$APP/Contents/Resources/"
+
+# bundled engine: the analysis panel probes Contents/Resources first
+# (the sandboxed app can't read /opt/homebrew); GPL binary, ships as-is
+STOCKFISH="$(command -v stockfish || true)"
+if [ -n "$STOCKFISH" ]; then
+    cp "$STOCKFISH" "$APP/Contents/Resources/stockfish"
+    codesign --force --sign - "$APP/Contents/Resources/stockfish"
+else
+    echo "warn: no stockfish on PATH — engine panel will need a brew install"
+fi
 
 codesign --force --sign - "$APP"
 echo "built: $APP"

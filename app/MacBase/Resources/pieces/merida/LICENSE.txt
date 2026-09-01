@@ -1,0 +1,4 @@
+Merida chess pieces by Armando Hernandez Marroquin.
+License: GPLv2+ (https://www.gnu.org/licenses/gpl-2.0.txt)
+SVG files obtained from the lichess-org/lila repository
+(public/piece/merida), whose COPYING.md records this attribution.
