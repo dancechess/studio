@@ -1,5 +1,6 @@
 use shakmaty::fen::Fen;
 use shakmaty::san::{San, SanPlus};
+use shakmaty::uci::UciMove;
 use shakmaty::{CastlingMode, Chess, EnPassantMode, Position};
 
 use crate::ChessError;
@@ -83,6 +84,21 @@ pub fn start_fen() -> String {
     START_FEN.to_string()
 }
 
+/// Converts an engine PV (UCI moves from `fen`) into SANs with check/mate
+/// suffixes. Stops quietly at the first unplayable move — a PV can be stale
+/// against a position that just changed — so callers get the valid prefix.
+#[uniffi::export]
+pub fn uci_line_to_san(fen: String, moves: Vec<String>) -> Result<Vec<String>, ChessError> {
+    let mut pos = parse_fen(&fen)?;
+    let mut sans = Vec::with_capacity(moves.len());
+    for uci in moves {
+        let Ok(parsed) = uci.parse::<UciMove>() else { break };
+        let Ok(m) = parsed.to_move(&pos) else { break };
+        sans.push(SanPlus::from_move_and_play_unchecked(&mut pos, &m).to_string());
+    }
+    Ok(sans)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,6 +135,29 @@ mod tests {
     #[test]
     fn illegal_move_is_rejected() {
         assert!(apply_san(START_FEN.into(), "Ke2".into()).is_err());
+    }
+
+    #[test]
+    fn uci_line_converts_and_truncates() {
+        let sans = uci_line_to_san(
+            START_FEN.into(),
+            vec!["e2e4".into(), "e7e5".into(), "g1f3".into()],
+        )
+        .unwrap();
+        assert_eq!(sans, vec!["e4", "e5", "Nf3"]);
+
+        // castling comes king-style from engines; suffixes are appended
+        let fen = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1";
+        let sans = uci_line_to_san(fen.into(), vec!["e1g1".into()]).unwrap();
+        assert_eq!(sans, vec!["O-O"]);
+
+        // stale tail is dropped, valid prefix kept
+        let sans = uci_line_to_san(
+            START_FEN.into(),
+            vec!["e2e4".into(), "e2e4".into()],
+        )
+        .unwrap();
+        assert_eq!(sans, vec!["e4"]);
     }
 
     // perft node counts from the classic reference positions
