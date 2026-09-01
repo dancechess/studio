@@ -22,9 +22,9 @@ struct Node {
 }
 
 #[derive(Debug, Clone)]
-struct GameInner {
-    headers: Vec<(String, String)>,
-    root_fen: String,
+pub(crate) struct GameInner {
+    pub(crate) headers: Vec<(String, String)>,
+    pub(crate) root_fen: String,
     nodes: Vec<Node>,
 }
 
@@ -140,9 +140,20 @@ impl GameInner {
         }
     }
 
+    /// Mainline SANs from the root, in order.
+    pub(crate) fn mainline_sans(&self) -> Vec<String> {
+        let mut sans = Vec::new();
+        let mut cur = ROOT_ID;
+        while let Some(&next) = self.nodes[cur as usize].children.first() {
+            sans.push(self.nodes[next as usize].san.clone());
+            cur = next;
+        }
+        sans
+    }
+
     // --- PGN serialization ---
 
-    fn write_pgn(&self) -> String {
+    pub(crate) fn write_pgn(&self) -> String {
         let mut out = String::new();
         for (k, v) in &self.headers {
             out.push_str(&format!("[{} \"{}\"]\n", k, v.replace('"', "\\\"")));
@@ -405,7 +416,7 @@ impl Game {
 // --- PGN parsing ---
 
 #[derive(Default)]
-struct GameBuilder {
+pub(crate) struct GameBuilder {
     game: GameInner,
     current: u32,
     stack: Vec<u32>,

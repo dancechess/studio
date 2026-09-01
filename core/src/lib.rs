@@ -1,6 +1,8 @@
+mod db;
 mod game;
 mod position;
 
+pub use db::*;
 pub use game::*;
 pub use position::*;
 
@@ -12,4 +14,6 @@ pub enum ChessError {
     InvalidFen { reason: String },
     #[error("illegal or unparsable move: {reason}")]
     InvalidMove { reason: String },
+    #[error("database error: {reason}")]
+    Database { reason: String },
 }
