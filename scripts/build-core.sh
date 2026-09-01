@@ -24,5 +24,9 @@ mkdir -p "$GEN/include"
 mv -f "$GEN"/macbase_coreFFI.h "$GEN/include/"
 mv -f "$GEN"/macbase_coreFFI.modulemap "$GEN/include/module.modulemap" 2>/dev/null || true
 
+# the SPM dev harness consumes the same header through its C target
+mkdir -p "$ROOT/app/FFI/include"
+cp -f "$GEN/include/macbase_coreFFI.h" "$ROOT/app/FFI/include/"
+
 echo "core built: $CORE/target/$CONFIG/libmacbase_core.a"
 echo "bindings:   $GEN/macbase_core.swift"

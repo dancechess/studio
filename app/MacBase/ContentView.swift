@@ -1,4 +1,9 @@
 import SwiftUI
+// under SPM the bindings live in their own module; in the Xcode project
+// everything is one target and this import compiles away
+#if canImport(MacBaseCore)
+import MacBaseCore
+#endif
 
 /// M0 bridge check: drives the Rust `Game` object from SwiftUI.
 /// Click legal moves to play through a game; the whole round-trip

@@ -11,6 +11,7 @@ targets:
     platform: macOS
     sources:
       - path: MacBase
+      - path: UCIKit
       - path: Generated
         createIntermediateGroups: true
     settings:
