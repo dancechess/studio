@@ -128,6 +128,31 @@ public final class UCIEngine {
         throw UCIError(description: "engine exited during analysis")
     }
 
+    /// Open-ended analysis for the live panel: streams infos until `stop()`
+    /// (or an immediate bestmove — mate/stalemate positions) ends it.
+    public func analyzeInfinite(
+        fen: String,
+        multipv: Int,
+        onInfo: (UCIInfo) -> Void
+    ) async throws {
+        setOption("MultiPV", String(multipv))
+        send("position fen \(fen)")
+        send("go infinite")
+        while let line = try await lines.next() {
+            if let info = UCIInfo.parse(line) {
+                onInfo(info)
+            } else if line.hasPrefix("bestmove") {
+                return
+            }
+        }
+        throw UCIError(description: "engine exited during analysis")
+    }
+
+    /// Asks a running `go infinite` to finish (its bestmove ends the loop).
+    public func stop() {
+        send("stop")
+    }
+
     public func quit() {
         send("quit")
         // give it a moment, then make sure it is gone

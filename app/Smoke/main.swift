@@ -55,6 +55,12 @@ let tree = try db.openingTree(fen: startFen())
 check(tree.first?.san == "e4", "bridge: opening tree aggregates (top move e4)")
 try? FileManager.default.removeItem(at: dbPath)
 
+// --- Rust bridge: engine PV → SAN (drives the analysis panel rows) ---
+let pvSans = try uciLineToSan(fen: startFen(), moves: ["e2e4", "e7e5", "g1f3"])
+check(pvSans == ["e4", "e5", "Nf3"], "bridge: uci pv converts to SAN")
+check(try uciLineToSan(fen: startFen(), moves: ["e2e4", "e2e4"]) == ["e4"],
+      "bridge: stale pv tail truncated")
+
 // --- real UCI engine, if installed ---
 let stockfish = ["/opt/homebrew/bin/stockfish", "/usr/local/bin/stockfish"]
     .first { FileManager.default.isExecutableFile(atPath: $0) }
@@ -70,6 +76,12 @@ if let stockfish {
     check(bestMove.count >= 4, "uci: bestmove '\(bestMove)'")
     check(best[1]?.scoreCp != nil || best[1]?.scoreMate != nil, "uci: pv1 has a score")
     check(best[2] != nil, "uci: multipv 2 delivers a second line")
+
+    // infinite analysis (the live panel's mode): stream, stop, terminate
+    DispatchQueue.global().asyncAfter(deadline: .now() + 0.4) { engine.stop() }
+    var infiniteInfos = 0
+    try await engine.analyzeInfinite(fen: startFen(), multipv: 2) { _ in infiniteInfos += 1 }
+    check(infiniteInfos > 0, "uci: go infinite streams and stop() ends it")
     engine.quit()
 } else {
     print("skip UCI engine checks (no stockfish found)")
