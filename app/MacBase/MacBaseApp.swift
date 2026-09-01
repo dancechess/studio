@@ -15,8 +15,14 @@ struct WindowActions: Equatable {
     var toggleReference: (() -> Void)?
     var exportGame: (() -> Void)?
     var focusSearch: (() -> Void)?
+    var openRecent: ((String) -> Void)?
+    var clearRecents: (() -> Void)?
+    var recentFiles: [String] = []
 
-    static func == (lhs: WindowActions, rhs: WindowActions) -> Bool { true }
+    // recents are the only data the menu renders; closures read live state
+    static func == (lhs: WindowActions, rhs: WindowActions) -> Bool {
+        lhs.recentFiles == rhs.recentFiles
+    }
 }
 
 struct WindowActionsKey: FocusedValueKey {
@@ -47,6 +53,18 @@ struct MacBaseCommands: Commands {
             Button("Open PGN…") { actions?.openPgn?() }
                 .keyboardShortcut("o")
                 .disabled(actions?.openPgn == nil)
+            Menu("Open Recent") {
+                ForEach(actions?.recentFiles ?? [], id: \.self) { path in
+                    Button((path as NSString).lastPathComponent) {
+                        actions?.openRecent?(path)
+                    }
+                }
+                if !(actions?.recentFiles ?? []).isEmpty {
+                    Divider()
+                    Button("Clear Menu") { actions?.clearRecents?() }
+                }
+            }
+            .disabled((actions?.recentFiles ?? []).isEmpty)
         }
         // NB: `replacing: .saveItem` would be a silent no-op — a non-document
         // File menu has no Save group to replace — so append instead.
@@ -87,6 +105,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Finder / Dock hand-off (.pgn association, drag onto the Dock icon).
+    func application(_ application: NSApplication, open urls: [URL]) {
+        MainActor.assumeIsolated {
+            let pgns = urls.filter { $0.pathExtension.lowercased() == "pgn" }
+            guard !pgns.isEmpty else { return }
+            // unsaved edits die with the replaced list — same gate as Open
+            for session in GameSession.SessionRegistry.shared.modified {
+                guard SavePrompt.run(for: session, canCancel: true) else { return }
+            }
+            DatabaseStore.shared.openPgn(pgns)
+        }
     }
 
     /// Quit-time rescue for unsaved database games (one alert for all of

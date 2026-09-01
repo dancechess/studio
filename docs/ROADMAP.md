@@ -33,6 +33,13 @@ Command Line Tools 足以走完全程:SPM 编译/运行(含 SwiftUI)、
 删除对局(右键/⌫,写回)、菜单栏 Commands 注册、⌘Z/⇧⌘Z 撤销重做
 (整局 PGN 快照栈)。
 
+## MVP 收尾第二批(2026-09-01 完成,待验收)
+
+写回前自动备份(每文件每次启动首写留 .pgn.bak)、File ▸ Open Recent
+(最近 8 个)、拖 PGN 到窗口打开 + .pgn 文件关联(Finder 双击/拖 Dock)、
+应用图标(Merida 马 + 棋色渐变,assets/MacBase.icns)、启动恢复上次
+查看的对局。
+
 ## MVP 之后(讨论过、未承诺)
 
 - ~~棋子素材~~:已完成(2026-09-01),选了 Merida 而非 cburnett(用户拍板,

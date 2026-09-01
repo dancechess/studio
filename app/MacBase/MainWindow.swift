@@ -189,8 +189,21 @@ struct MainWindow: View {
             toggleEngine: { toggleEngine() },
             toggleReference: { toggleReference() },
             exportGame: { exportGamePgn(session) },
-            focusSearch: { searchFocused = true }
+            focusSearch: { searchFocused = true },
+            openRecent: { path in
+                guard confirmLeaveGame() else { return }
+                store.openPgn([URL(fileURLWithPath: path)])
+            },
+            clearRecents: { store.clearRecents() },
+            recentFiles: store.recentFiles
         ))
+        // drag a .pgn from Finder onto the window to open it
+        .dropDestination(for: URL.self) { urls, _ in
+            let pgns = urls.filter { $0.pathExtension.lowercased() == "pgn" }
+            guard !pgns.isEmpty, confirmLeaveGame() else { return false }
+            store.openPgn(pgns)
+            return true
+        }
         .toolbar {
             ToolbarItemGroup {
                 Button("Open PGN", systemImage: "folder") {
@@ -330,6 +343,7 @@ struct MainWindow: View {
         guard id != session.sourceGameId else { return }
         if let pgn = store.pgn(for: id) {
             session.loadPgn(pgn, sourceId: id)
+            UserDefaults.standard.set(id, forKey: DatabaseStore.lastSelectedGameKey)
         }
     }
 

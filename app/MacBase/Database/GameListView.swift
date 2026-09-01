@@ -147,6 +147,10 @@ struct GameListView: NSViewRepresentable {
         /// Quiets delegate callbacks during programmatic re-selection.
         private var reselecting = false
         private var didInitialSelect = false
+        /// Startup-only: restore the last-viewed game once, then never again
+        /// (a replaced list must not inherit it).
+        private var pendingInitialId: Int64? = UserDefaults.standard
+            .object(forKey: DatabaseStore.lastSelectedGameKey) as? Int64
 
         init(view: GameListView) {
             self.view = view
@@ -159,6 +163,7 @@ struct GameListView: NSViewRepresentable {
             selectedId = nil
             selectedRow = -1
             didInitialSelect = false
+            pendingInitialId = nil // only the startup list restores it
         }
 
         func deselectQuietly() {
@@ -213,7 +218,18 @@ struct GameListView: NSViewRepresentable {
         func selectInitialRowIfNeeded() {
             guard !didInitialSelect, count > 0, let table else { return }
             didInitialSelect = true
-            table.selectRowIndexes([0], byExtendingSelection: false)
+            var row = 0
+            if let id = pendingInitialId {
+                pendingInitialId = nil
+                for probe in 0..<min(Int(count), Self.reselectScanLimit)
+                where summary(at: probe)?.id == id {
+                    row = probe
+                    break
+                }
+            }
+            // unsuppressed: selectionDidChange fires and loads the game
+            table.selectRowIndexes([row], byExtendingSelection: false)
+            table.scrollRowToVisible(row)
             focusTable()
         }
 

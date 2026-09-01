@@ -53,9 +53,18 @@ final class DatabaseStore {
     /// multi-file list has no unambiguous home for a new game.
     var canWriteBack: Bool { db != nil && sourceURLs.count == 1 }
 
+    /// Recently opened PGN paths, newest first (File ▸ Open Recent).
+    private(set) var recentFiles: [String] = []
+
+    /// Source files already backed up this launch (one .bak per file per
+    /// run — a safety net for the whole-file write-back).
+    private var backedUpPaths: Set<String> = []
+
     private static let lastCachePathKey = "lastCachePath"
     private static let lastSourceNameKey = "lastSourceName"
     private static let lastSourcePathsKey = "lastSourcePaths"
+    private static let recentFilesKey = "recentFiles"
+    static let lastSelectedGameKey = "lastSelectedGameId"
 
     private init() {
         // reopen the last cache so the app starts where it left off; the
@@ -77,6 +86,20 @@ final class DatabaseStore {
         } else {
             statusText = "Open a PGN file to begin"
         }
+        recentFiles = defaults.stringArray(forKey: Self.recentFilesKey) ?? []
+    }
+
+    func clearRecents() {
+        recentFiles = []
+        UserDefaults.standard.removeObject(forKey: Self.recentFilesKey)
+    }
+
+    private func rememberRecent(_ urls: [URL]) {
+        guard urls.count == 1, let path = urls.first?.path else { return }
+        var list = recentFiles.filter { $0 != path }
+        list.insert(path, at: 0)
+        recentFiles = Array(list.prefix(8))
+        UserDefaults.standard.set(recentFiles, forKey: Self.recentFilesKey)
     }
 
     /// Synchronous paged fetch for the table's data source; SQLite with
@@ -203,6 +226,14 @@ final class DatabaseStore {
         guard let db, canWriteBack, let source = sourceURLs.first else { return }
         let scoped = source.startAccessingSecurityScopedResource()
         defer { if scoped { source.stopAccessingSecurityScopedResource() } }
+        // first write to this file this launch: keep a .bak of the original
+        if !backedUpPaths.contains(source.path),
+           FileManager.default.fileExists(atPath: source.path) {
+            let bak = source.path + ".bak"
+            try? FileManager.default.removeItem(atPath: bak)
+            try? FileManager.default.copyItem(atPath: source.path, toPath: bak)
+            backedUpPaths.insert(source.path)
+        }
         try db.writePgnFile(path: source.path)
         if let cacheURL {
             try? FileManager.default.setAttributes(
@@ -279,6 +310,7 @@ final class DatabaseStore {
         UserDefaults.standard.set(cacheURL.path, forKey: Self.lastCachePathKey)
         UserDefaults.standard.set(name, forKey: Self.lastSourceNameKey)
         UserDefaults.standard.set(urls.map(\.path), forKey: Self.lastSourcePathsKey)
+        rememberRecent(urls)
     }
 
     /// One cache db per source selection, keyed by the full path set.

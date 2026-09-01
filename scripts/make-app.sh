@@ -31,9 +31,20 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>LSApplicationCategoryType</key><string>public.app-category.board-games</string>
+    <key>CFBundleIconFile</key><string>MacBase</string>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key><string>PGN Chess Games</string>
+            <key>CFBundleTypeExtensions</key><array><string>pgn</string></array>
+            <key>CFBundleTypeRole</key><string>Editor</string>
+        </dict>
+    </array>
 </dict>
 </plist>
 PLIST
+
+cp "$ROOT/assets/MacBase.icns" "$APP/Contents/Resources/MacBase.icns"
 
 # SPM resource bundle (piece images): Bundle.module looks for it inside
 # Contents/Resources of the enclosing app
