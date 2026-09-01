@@ -15,14 +15,17 @@
 冒烟:`cd app && swift run MacBaseSmoke`(15 项:UCI 解析、桥的走法/树/
 令牌/数据库、真 Stockfish 深度 12 MultiPV 2)。
 
-## 当前阻塞
+## Xcode:不再是阻塞项(2026-09-01 验证)
 
-**Xcode 未安装**(只有 Command Line Tools;SPM 开发套件已绕开大半——桥、
-UCIKit、冒烟都能跑,`swift run MacBaseApp` 还能直接弹 M0 窗口)。剩下必须
-Xcode 的:正式 .app bundle、资源目录、签名、SwiftUI 预览。用户动作:
-App Store 装 Xcode → 启动接受许可 →
-`sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` →
-`brew install xcodegen` → `xcodegen -s app/project.yml`。
+Command Line Tools 足以走完全程:SPM 编译/运行(含 SwiftUI)、
+`scripts/make-app.sh` 产出 ad-hoc 签名的 `dist/MacBase.app`(已验证可
+双击启动),`codesign`/`iconutil`/`hdiutil` 系统自带,连 `notarytool`
+(上线公证用)都在 CLT 里。资源(棋子图、引擎)直接放
+`Contents/Resources/`,不需要 asset catalog。
+
+装 Xcode 只为舒适性,不装也不拦路:SwiftUI 预览、Instruments 剖析、
+视图层级调试器。想装的话 `app/project.yml` 仍可用
+(`xcodegen -s app/project.yml`)。
 
 ## MVP 之后(讨论过、未承诺)
 

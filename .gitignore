@@ -5,3 +5,4 @@ app/MacBase.xcodeproj/
 app/MacBase/MacBase.entitlements
 app/.build/
 app/FFI/include/
+dist/
