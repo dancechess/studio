@@ -2,7 +2,11 @@
 
 Mac 原生的棋库应用(ChessBase 的 Mac 替代)。SwiftUI 界面 + Rust 核心
 (走法生成、PGN 变着树、SQLite 棋库、开局树),UCI 引擎(内置 Stockfish)
-子进程分析。完整计划见 `~/.claude/plans/mvp-serene-bird.md`。
+子进程分析。
+
+文档:[架构](docs/ARCHITECTURE.md) ·
+[着法面板设计](docs/NOTATION-VIEW.md) ·
+[路线图](docs/ROADMAP.md) · 交接说明 [AGENTS.md](AGENTS.md)
 
 ## 结构
 
