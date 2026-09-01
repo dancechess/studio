@@ -1,9 +1,11 @@
 mod db;
 mod game;
+mod notation;
 mod position;
 
 pub use db::*;
 pub use game::*;
+pub use notation::*;
 pub use position::*;
 
 uniffi::setup_scaffolding!();

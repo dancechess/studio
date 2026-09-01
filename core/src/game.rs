@@ -55,7 +55,7 @@ pub struct NodeInfo {
 
 #[derive(uniffi::Object)]
 pub struct Game {
-    inner: Mutex<GameInner>,
+    pub(crate) inner: Mutex<GameInner>,
 }
 
 impl GameInner {
@@ -103,7 +103,7 @@ impl GameInner {
 
     /// (fullmove number, is_white_move) of the move at `id`.
     /// For the root (no move) it reports the upcoming move instead.
-    fn numbering(&self, id: u32) -> (u32, bool) {
+    pub(crate) fn numbering(&self, id: u32) -> (u32, bool) {
         let ply_in_game = self.path_to(id).len() as u32; // >= 1 for non-root
         let (base_fullmove, base_white) = self
             .root_fen
@@ -138,6 +138,23 @@ impl GameInner {
             move_number,
             is_white_move,
         }
+    }
+
+    // narrow read accessors for sibling modules (notation, db)
+    pub(crate) fn node_san(&self, id: u32) -> String {
+        self.nodes[id as usize].san.clone()
+    }
+
+    pub(crate) fn node_children(&self, id: u32) -> Vec<u32> {
+        self.nodes[id as usize].children.clone()
+    }
+
+    pub(crate) fn node_nags(&self, id: u32) -> Vec<u8> {
+        self.nodes[id as usize].nags.clone()
+    }
+
+    pub(crate) fn node_comment(&self, id: u32) -> Option<String> {
+        self.nodes[id as usize].comment.clone()
     }
 
     /// Mainline SANs from the root, in order.
