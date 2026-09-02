@@ -6,3 +6,7 @@ app/Studio/Studio.entitlements
 app/.build/
 app/FFI/include/
 dist/
+
+# AI 交接文档:留在工作目录供 session 自动加载,但不进公开仓库
+AGENTS.md
+CLAUDE.md

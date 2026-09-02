@@ -64,7 +64,8 @@ Rust 变着树 ──> notation_tokens() 令牌流 ──> NSTextView 渲染 + �
 
 - 快捷键经菜单栏 Commands 注册(标准 Mac 体验,自动出现在菜单里)。
   ——**M5 实现时暂缓**:键位仍走 KeyEventMonitor(和方向键一套,原因见
-  AGENTS 坑 9),菜单栏注册留作 polish;右键菜单已实现(NotationView
+  GameWindow.swift 里 KeyEventMonitor 的注释:SwiftUI 的 .focusable() +
+  onKeyPress 一点棋盘就丢焦点),菜单栏注册留作 polish;右键菜单已实现(NotationView
   Coordinator 建 NSMenu,右键先选中被点的着)。
 - **单窗口两态(2026-09-01 定,MainWindow)**:上表键位在**研读态**生效。
   浏览态(焦点在下方列表):↑↓ 选局、←→ 在预览局里前后步、Enter 进入研读态;

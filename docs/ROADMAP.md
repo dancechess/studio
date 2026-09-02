@@ -7,7 +7,7 @@
 |---|---|---|---|
 | M0 骨架 | Swift↔Rust 桥打通,界面显示 `legal_moves` | ✅ 完成 | ✅ 桥经 SPM 冒烟端到端验证;Xcode 工程本身待装 Xcode |
 | M1 棋盘与回放 | 棋盘渲染、拖子、着法面板(见 NOTATION-VIEW.md) | ✅ 树 + 令牌 + 坐标 API | ✅ 点击/拖子走棋、分叉变着浮窗(→ 遇分叉弹出,↑↓+回车选)、升变选子浮窗、↑↓ 兄弟变着切换 + Home/End 局首末、NSTextView 着法面板、打开/粘贴 PGN、Merida SVG 棋子素材(2026-09-01 换毕) |
-| M2 导入与列表 | 打开 PGN(SQLite 为每文件缓存),单窗口列表 + 棋盘(用户定稿) | ✅ `Database` + `update_game` + `clear_all` + `Number` 排序 | ✅ 验收通过后又按用户要求改为:Open PGN 替换列表、每 PGN 一份缓存(mtime 新鲜判定,二次打开秒开)、# 编号列(= 文件内序号,默认排序)。单窗口两态焦点、保存询问等见 AGENTS。之后补:# 编号列 + Round 列、手工录入闭环(⌘S 存入当前列表 + 对局信息表单 + New PGN 建空文件)、**保存即写回源 .pgn**(全量重写,原子替换)。剩余:搜索筛选、删对局 |
+| M2 导入与列表 | 打开 PGN(SQLite 为每文件缓存),单窗口列表 + 棋盘(用户定稿) | ✅ `Database` + `update_game` + `clear_all` + `Number` 排序 | ✅ 验收通过后又按用户要求改为:Open PGN 替换列表、每 PGN 一份缓存(mtime 新鲜判定,二次打开秒开)、# 编号列(= 文件内序号,默认排序)。单窗口两态焦点、保存询问等已实现。之后补:# 编号列 + Round 列、手工录入闭环(⌘S 存入当前列表 + 对局信息表单 + New PGN 建空文件)、**保存即写回源 .pgn**(全量重写,原子替换)。剩余:搜索筛选、删对局 |
 | M3 引擎分析 | 评估条、MultiPV、插入变着、打包 Stockfish | ✅ `uci_line_to_san`(PV 转 SAN) | 🔶 完成待验收(2026-09-01):⌘E 开关面板(可见=在算)、横评估条(棋盘下,ChessBase 式)、MultiPV 默认 3 + 面板内 +/-、行带着法编号、点击插第一步 / ⌥点击插整线、`go infinite`+`stop` 循环、make-app.sh 内置 stockfish(沙盒可用);主窗和独立窗都有 |
 | M4 开局树 | Reference 模式:树 + matched 对局列表联动(用户定稿,对标 ChessBase Reference) | ✅ `opening_tree()` + `games_at_position(_count)` | 🔶 完成待验收(2026-09-01):⌘T 开关,右栏下半区(与引擎面板互斥共用),行 = 着法/局数/W-D-L 分段条/白方得分%,点着法即走;开启时底部列表过滤为"到达当前局面的对局"(zobrist,换序转换也算),状态栏显示 "N of M";换列表自动退出 |
 | M5 标注与导出 | 注释/NAG 编辑、变着升删、PGN 导出 | ✅ 编辑 API + 序列化 | 🔶 完成待验收(2026-09-01):`!`/`?` 打 NAG(同类替换、再按取消)、⌫ 确认后删子树、⌘↑ 变着升级、↩/⌘A 注释浮窗(TextEditor,⌘↩ 存/Esc 取消);记谱右键菜单(升/删/注释/Annotate 全套 NAG/Copy PGN/Copy FEN/Export Game as PGN…);⌘S 存库即写回,导出另存单局。菜单栏 Commands 注册暂缓(键位走监视器) |
