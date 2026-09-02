@@ -1,7 +1,23 @@
+import AppKit
 import SwiftUI
 #if canImport(DanceChessCore)
 import DanceChessCore
 #endif
+
+/// DCS_SETUP_DEBUG=1: appends gesture/event traces to /tmp/dcs-setup-debug.log.
+@MainActor
+func setupDebugLog(_ message: String) {
+    guard ProcessInfo.processInfo.environment["DCS_SETUP_DEBUG"] != nil else { return }
+    let line = "\(String(format: "%.3f", Date().timeIntervalSince1970)) \(message)\n"
+    let path = "/tmp/dcs-setup-debug.log"
+    if let handle = FileHandle(forWritingAtPath: path) {
+        handle.seekToEndOfFile()
+        handle.write(line.data(using: .utf8)!)
+        try? handle.close()
+    } else {
+        try? line.write(toFile: path, atomically: true, encoding: .utf8)
+    }
+}
 
 /// Position composer: click-to-paint pieces onto a board, pick side to
 /// move and castling rights, and start a new (scratch) game from the
@@ -24,6 +40,7 @@ struct SetupPositionSheet: View {
     // drag-to-move state (dragging off the board deletes the piece)
     @State private var dragPiece: Character?
     @State private var dragLocation: CGPoint?
+    @State private var debugMonitor: Any?
 
     private let lightColor = Color(red: 0.94, green: 0.85, blue: 0.71)
     private let darkColor = Color(red: 0.71, green: 0.53, blue: 0.39)
@@ -73,6 +90,21 @@ struct SetupPositionSheet: View {
         }
         .padding(16)
         .frame(width: 620)
+        .onAppear {
+            setupDebugLog("sheet appeared")
+            if ProcessInfo.processInfo.environment["DCS_SETUP_DEBUG"] != nil {
+                debugMonitor = NSEvent.addLocalMonitorForEvents(
+                    matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
+                ) { event in
+                    setupDebugLog("nsevent type=\(event.type.rawValue) window=\(event.windowNumber) loc=\(event.locationInWindow)")
+                    return event
+                }
+            }
+        }
+        .onDisappear {
+            if let debugMonitor { NSEvent.removeMonitor(debugMonitor) }
+            debugMonitor = nil
+        }
     }
 
     private var board: some View {
@@ -93,31 +125,40 @@ struct SetupPositionSheet: View {
             }
         }
         .frame(width: cell * 8, height: cell * 8)
-        .overlay(Rectangle().strokeBorder(Color.secondary.opacity(0.4)))
-        // drag an already-placed piece to another square; off the board = delete
-        .gesture(
-            DragGesture(minimumDistance: 3, coordinateSpace: .local)
-                .onChanged { value in
-                    if dragPiece == nil {
-                        guard let from = squareAt(value.startLocation),
-                              let piece = squares[from] else { return }
-                        dragPiece = piece
-                        squares[from] = nil
-                        errorText = nil
-                    }
-                    dragLocation = value.location
-                }
-                .onEnded { value in
-                    defer {
-                        dragPiece = nil
-                        dragLocation = nil
-                    }
-                    guard let piece = dragPiece else { return }
-                    if let to = squareAt(value.location) {
-                        squares[to] = piece
-                    } // else: dropped off the board — the piece stays removed
-                }
+        .coordinateSpace(name: "setupBoard")
+        .overlay(
+            Rectangle()
+                .strokeBorder(Color.secondary.opacity(0.4))
+                .allowsHitTesting(false)
         )
+    }
+
+    /// Drag gesture attached per square (a container-level gesture gets
+    /// starved by the squares' tap gestures inside a sheet); locations are
+    /// resolved in the shared "setupBoard" space.
+    private func dragGesture(from index: Int) -> some Gesture {
+        DragGesture(minimumDistance: 3, coordinateSpace: .named("setupBoard"))
+            .onChanged { value in
+                setupDebugLog("drag changed square=\(index) loc=\(value.location) piece=\(dragPiece.map(String.init) ?? "nil") onSquare=\(squares[index].map(String.init) ?? "nil")")
+                if dragPiece == nil {
+                    guard let piece = squares[index] else { return }
+                    dragPiece = piece
+                    squares[index] = nil
+                    errorText = nil
+                }
+                dragLocation = value.location
+            }
+            .onEnded { value in
+                setupDebugLog("drag ended square=\(index) loc=\(value.location) to=\(squareAt(value.location).map(String.init) ?? "off-board") piece=\(dragPiece.map(String.init) ?? "nil")")
+                defer {
+                    dragPiece = nil
+                    dragLocation = nil
+                }
+                guard let piece = dragPiece else { return }
+                if let to = squareAt(value.location) {
+                    squares[to] = piece
+                } // else: dropped off the board — the piece stays removed
+            }
     }
 
     private func squareAt(_ point: CGPoint) -> Int? {
@@ -138,10 +179,12 @@ struct SetupPositionSheet: View {
         .frame(width: cell, height: cell)
         .contentShape(Rectangle())
         .onTapGesture {
+            setupDebugLog("tap square=\(index)")
             errorText = nil
             // painting the same piece again erases it (quick toggling)
             squares[index] = (squares[index] == tool) ? nil : tool
         }
+        .gesture(dragGesture(from: index))
     }
 
     private func palette(for symbols: String) -> some View {
