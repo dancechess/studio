@@ -29,6 +29,7 @@ struct MainWindow: View {
     @State private var hostWindow: NSWindow?
     @State private var showImporter = false
     @State private var showSaveSheet = false
+    @State private var showSetupSheet = false
     @State private var searchQuery = ""
     @FocusState private var searchFocused: Bool
     @Environment(\.openWindow) private var openWindow
@@ -122,6 +123,21 @@ struct MainWindow: View {
                     engine.setMultiPV(engine.multiPV + 1)
                 }
             }
+            // dev hook: draw sample annotations (screenshots)
+            if ProcessInfo.processInfo.environment["DCS_AUTO_ANNOTATE"] != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    session.toEnd()
+                    session.toggleArrow(from: 3, to: 59, color: "G") // d1→d8
+                    session.toggleSquareHighlight(57, color: "R") // b8
+                    session.toggleSquareHighlight(51, color: "Y") // d7
+                }
+            }
+            // dev hook: open the setup-position sheet (screenshots)
+            if ProcessInfo.processInfo.environment["DCS_AUTO_SETUP"] != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    showSetupSheet = true
+                }
+            }
             // dev hook: flip the board (screenshots)
             if ProcessInfo.processInfo.environment["DCS_AUTO_FLIP"] != nil {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
@@ -168,6 +184,11 @@ struct MainWindow: View {
             tree.hide() // new list: reference mode starts over
             if store.gameCount == 0 { session.resetToBlank() }
         }
+        .sheet(isPresented: $showSetupSheet) {
+            SetupPositionSheet { fen in
+                newGame(fen: fen)
+            }
+        }
         .sheet(isPresented: $showSaveSheet) {
             GameInfoSheet(session: session,
                           listName: store.sourceName ?? "list") {
@@ -192,6 +213,8 @@ struct MainWindow: View {
             toggleReference: { toggleReference() },
             exportGame: { exportGamePgn(session) },
             focusSearch: { searchFocused = true },
+            setupPosition: { showSetupSheet = true },
+            clearAnnotations: { session.clearAnnotations() },
             openRecent: { path in
                 guard confirmLeaveGame() else { return }
                 store.openPgn([URL(fileURLWithPath: path)])
@@ -222,6 +245,10 @@ struct MainWindow: View {
                     newGame()
                 }
                 .help("Start a new game on this board (⌘S saves it into the list)")
+                Button("Setup", systemImage: "square.grid.3x3.square") {
+                    showSetupSheet = true
+                }
+                .help("Compose a position and start a game from it (⌥⌘N)")
                 Button("Save", systemImage: "square.and.arrow.down") {
                     saveGame()
                 }
@@ -367,10 +394,15 @@ struct MainWindow: View {
 
     /// "+": a blank board right here — no extra window. The list selection
     /// clears (this game isn't in the list yet) and the board takes focus.
-    private func newGame() {
+    /// With a `fen`, the scratch game starts from that position (Setup).
+    private func newGame(fen: String? = nil) {
         guard confirmLeaveGame() else { return }
         listController.deselect()
-        session.resetToBlank()
+        if let fen {
+            session.loadPgn("[SetUp \"1\"]\n[FEN \"\(fen)\"]\n\n*")
+        } else {
+            session.resetToBlank()
+        }
         setEngaged(true)
     }
 

@@ -32,6 +32,74 @@ struct PromotionRequest: Equatable {
     let isWhite: Bool
 }
 
+/// Board annotations of one position, stored in the node's comment as the
+/// interoperable [%csl ...]/[%cal ...] tags (lichess/ChessBase convention).
+/// Colors are the convention's letters: G, R, Y, B.
+struct BoardAnnotations: Equatable {
+    struct Arrow: Equatable {
+        let from: Int
+        let to: Int
+        let color: Character
+    }
+
+    var squares: [Int: Character] = [:] // square index → color letter
+    var arrows: [Arrow] = []
+
+    var isEmpty: Bool { squares.isEmpty && arrows.isEmpty }
+
+    private static func squareName(_ index: Int) -> String {
+        "\(Character(UnicodeScalar(97 + index % 8)!))\(index / 8 + 1)"
+    }
+
+    private static func squareIndex<S: StringProtocol>(_ name: S) -> Int? {
+        let chars = Array(name.unicodeScalars)
+        guard chars.count == 2,
+              (97...104).contains(chars[0].value),
+              (49...56).contains(chars[1].value) else { return nil }
+        return Int(chars[0].value - 97) + Int(chars[1].value - 49) * 8
+    }
+
+    /// Splits a PGN comment into (annotations, remaining prose).
+    static func parse(_ comment: String?) -> (BoardAnnotations, String) {
+        var result = BoardAnnotations()
+        guard let comment else { return (result, "") }
+        var prose = comment
+        let pattern = #/\[%(csl|cal)\s+([^\]]*)\]/#
+        for match in comment.matches(of: pattern) {
+            for entry in match.2.split(separator: ",") {
+                let item = entry.trimmingCharacters(in: .whitespaces)
+                guard let color = item.first else { continue }
+                let rest = item.dropFirst()
+                if match.1 == "csl", let square = squareIndex(rest) {
+                    result.squares[square] = color
+                } else if match.1 == "cal", rest.count == 4,
+                          let from = squareIndex(rest.prefix(2)),
+                          let to = squareIndex(rest.suffix(2)) {
+                    result.arrows.append(Arrow(from: from, to: to, color: color))
+                }
+            }
+        }
+        prose.replace(pattern, with: "")
+        return (result, prose.trimmingCharacters(in: .whitespaces))
+    }
+
+    /// Re-assembles a comment: tags first, then the prose (nil when empty).
+    func serialized(prose: String) -> String? {
+        var parts: [String] = []
+        if !squares.isEmpty {
+            let items = squares.sorted { $0.key < $1.key }
+                .map { "\($0.value)\(Self.squareName($0.key))" }
+            parts.append("[%csl \(items.joined(separator: ","))]")
+        }
+        if !arrows.isEmpty {
+            let items = arrows.map { "\($0.color)\(Self.squareName($0.from))\(Self.squareName($0.to))" }
+            parts.append("[%cal \(items.joined(separator: ","))]")
+        }
+        if !prose.isEmpty { parts.append(prose) }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+}
+
 /// Single source of truth for one open game: the Rust `Game` plus the
 /// current node. Board, notation and (later) engine panels all observe it.
 @Observable
@@ -56,6 +124,8 @@ final class GameSession {
     var errorText: String?
     /// Board orientation (view preference; not part of the game data).
     private(set) var flipped = false
+    /// Arrows/highlights of the current position (parsed from its comment).
+    private(set) var annotations = BoardAnnotations()
 
     func toggleFlip() { flipped.toggle() }
 
@@ -352,6 +422,47 @@ final class GameSession {
         select(parent)
     }
 
+    // --- board annotations (arrows / colored squares) ---
+
+    /// Toggle semantics: same square+color removes, same square other color
+    /// replaces. Works on any node incl. the root (FEN puzzles).
+    func toggleSquareHighlight(_ square: Int, color: Character) {
+        var current = annotations
+        if current.squares[square] == color {
+            current.squares[square] = nil
+        } else {
+            current.squares[square] = color
+        }
+        writeAnnotations(current)
+    }
+
+    func toggleArrow(from: Int, to: Int, color: Character) {
+        var current = annotations
+        if let index = current.arrows.firstIndex(where: { $0.from == from && $0.to == to }) {
+            let existing = current.arrows[index]
+            current.arrows.remove(at: index)
+            if existing.color != color {
+                current.arrows.append(.init(from: from, to: to, color: color))
+            }
+        } else {
+            current.arrows.append(.init(from: from, to: to, color: color))
+        }
+        writeAnnotations(current)
+    }
+
+    func clearAnnotations() {
+        guard !annotations.isEmpty else { return }
+        writeAnnotations(BoardAnnotations())
+    }
+
+    private func writeAnnotations(_ new: BoardAnnotations) {
+        snapshot()
+        let (_, prose) = BoardAnnotations.parse(game.node(id: currentNode).comment)
+        game.setComment(id: currentNode, comment: new.serialized(prose: prose))
+        annotations = new
+        rebuildTokens()
+    }
+
     // --- comment editor (popover per NOTATION-VIEW.md: no inline editing) ---
 
     /// Non-nil while the comment editor is open; bound to its TextEditor.
@@ -360,7 +471,8 @@ final class GameSession {
 
     func openCommentEditor() {
         guard currentNode != 0 else { return }
-        commentDraft = game.node(id: currentNode).comment ?? ""
+        // the editor sees only the prose; [%cal]/[%csl] tags stay put
+        commentDraft = BoardAnnotations.parse(game.node(id: currentNode).comment).1
     }
 
     func commitComment() {
@@ -371,7 +483,7 @@ final class GameSession {
         commentDraft = nil
         snapshot()
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        game.setComment(id: currentNode, comment: text.isEmpty ? nil : text)
+        game.setComment(id: currentNode, comment: annotations.serialized(prose: text))
         rebuildTokens()
     }
 
@@ -412,6 +524,7 @@ final class GameSession {
                 lastMove = nil
             }
             applyFen()
+            annotations = BoardAnnotations.parse(game.node(id: currentNode).comment).0
             errorText = nil
         } catch {
             errorText = "\(error)"

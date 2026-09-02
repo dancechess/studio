@@ -102,6 +102,8 @@ struct NotationView: NSViewRepresentable {
             menu.addItem(item("Promote Variation", #selector(menuPromote), enabled: editable))
             menu.addItem(item("Delete From Here…", #selector(menuDelete), enabled: editable))
             menu.addItem(item("Edit Comment…", #selector(menuComment), enabled: editable))
+            menu.addItem(item("Clear Arrows & Highlights", #selector(menuClearAnnotations),
+                              enabled: !session.annotations.isEmpty))
             menu.addItem(.separator())
 
             let nagMenu = NSMenu()
@@ -136,6 +138,7 @@ struct NotationView: NSViewRepresentable {
             session?.applyNag(UInt8(sender.tag))
         }
         @objc private func menuClearNags() { session?.clearNags() }
+        @objc private func menuClearAnnotations() { session?.clearAnnotations() }
         @objc private func menuCopyPgn() {
             guard let session else { return }
             NSPasteboard.general.clearContents()
@@ -170,6 +173,16 @@ struct NotationView: NSViewRepresentable {
         }
 
         for token in tokens {
+            // [%csl]/[%cal] annotation tags render on the board, not here;
+            // a comment that is only tags disappears entirely
+            var commentText: String?
+            if token.kind == .comment {
+                let stripped = token.text
+                    .replacing(#/\[%[^\]]*\]/#, with: "")
+                    .trimmingCharacters(in: .whitespaces)
+                if stripped.isEmpty { continue }
+                commentText = stripped
+            }
             switch token.kind {
             case .paragraphBreak:
                 _ = append("\n", [:])
@@ -210,7 +223,7 @@ struct NotationView: NSViewRepresentable {
                     .foregroundColor: NSColor.systemGreen,
                 ]
                 attrs[.dcsNode] = tagged(token)
-                _ = append(token.text, attrs)
+                _ = append(commentText ?? token.text, attrs)
                 needSpace = true
             case .paragraphBreak, .closeParen:
                 break

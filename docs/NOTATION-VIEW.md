@@ -73,6 +73,10 @@ Rust 变着树 ──> notation_tokens() 令牌流 ──> NSTextView 渲染 + �
   独立对局窗。分叉浮窗弹出时其键位在两态下都优先。
 - **注释不做全文内联编辑**(可编辑富文本 = 光标/undo/输入法泥潭,
   ChessBase 也是弹窗):popover 里普通 TextEditor,提交时写回。
+- **注释里的 `[%csl]`/`[%cal]` 标注标签不渲染**(渲染在棋盘上):
+  buildAttributed 剥掉标签,纯标签注释整个跳过(要在 needSpace 空格
+  之前判断,不然留双空格);注释编辑器也只见文字部分,标签由
+  `BoardAnnotations` 管理(GameSession)。
 - 右键菜单:升/删变着、加注释、从此处复制 PGN。
 
 ## 4. 分阶段

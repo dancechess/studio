@@ -15,6 +15,8 @@ struct WindowActions: Equatable {
     var toggleReference: (() -> Void)?
     var exportGame: (() -> Void)?
     var focusSearch: (() -> Void)?
+    var setupPosition: (() -> Void)?
+    var clearAnnotations: (() -> Void)?
     var openRecent: ((String) -> Void)?
     var clearRecents: (() -> Void)?
     var recentFiles: [String] = []
@@ -81,6 +83,12 @@ struct StudioCommands: Commands {
                 .disabled(actions?.exportGame == nil)
         }
         CommandMenu("Game") {
+            Button("Setup Position…") { actions?.setupPosition?() }
+                .keyboardShortcut("n", modifiers: [.command, .option])
+                .disabled(actions?.setupPosition == nil)
+            Button("Clear Arrows & Highlights") { actions?.clearAnnotations?() }
+                .disabled(actions?.clearAnnotations == nil)
+            Divider()
             Button("Flip Board") { actions?.flip?() }
                 .keyboardShortcut("f", modifiers: [.command, .shift])
                 .disabled(actions?.flip == nil)

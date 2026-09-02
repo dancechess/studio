@@ -31,6 +31,12 @@ struct BoardView: View {
                         }
                     }
                 }
+                AnnotationOverlay(session: session, cell: cell)
+                    .allowsHitTesting(false)
+                RightClickCatcher { point, modifiers, dragTo in
+                    handleRightClick(at: point, dragTo: dragTo,
+                                     modifiers: modifiers, cell: cell)
+                }
                 if let from = dragFrom, let location = dragLocation,
                    let piece = session.squares[from] {
                     PieceView(piece: piece, cell: cell)
@@ -150,6 +156,24 @@ struct BoardView: View {
                 session.play(from: from, to: to)
                 selected = nil
             }
+    }
+
+    /// Right-click = toggle square highlight; right-drag = toggle arrow.
+    /// Color from modifiers (lichess-style): plain G, ⇧ R, ⌥ B, ⇧⌥ Y.
+    private func handleRightClick(at point: CGPoint, dragTo: CGPoint?,
+                                  modifiers: NSEvent.ModifierFlags, cell: CGFloat) {
+        let color: Character = switch (modifiers.contains(.shift), modifiers.contains(.option)) {
+        case (true, true): "Y"
+        case (true, false): "R"
+        case (false, true): "B"
+        case (false, false): "G"
+        }
+        guard let from = squareAt(point, cell: cell) else { return }
+        if let dragTo, let to = squareAt(dragTo, cell: cell), to != from {
+            session.toggleArrow(from: from, to: to, color: color)
+        } else {
+            session.toggleSquareHighlight(from, color: color)
+        }
     }
 
     private func squareAt(_ point: CGPoint, cell: CGFloat) -> Int? {

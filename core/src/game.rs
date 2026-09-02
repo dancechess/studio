@@ -183,6 +183,11 @@ impl GameInner {
             out.push('\n');
         }
         let mut body = String::new();
+        // pre-move comment on the root (board annotations of the starting
+        // position live here as [%cal]/[%csl] tags)
+        if let Some(c) = &self.nodes[ROOT_ID as usize].comment {
+            body.push_str(&format!("{{{c}}} "));
+        }
         self.write_moves(&mut body, ROOT_ID, true);
         let result = self
             .headers
@@ -615,6 +620,18 @@ mod tests {
         let pgn = game.to_pgn();
         let game2 = Game::from_pgn(pgn.clone()).unwrap();
         assert_eq!(trees(&game), trees(&game2), "round-trip changed the tree:\n{pgn}");
+    }
+
+    #[test]
+    fn root_comment_round_trips() {
+        let game = Game::from_pgn("{[%csl Ge5] board notes} 1. e4 e5 *".into()).unwrap();
+        assert_eq!(
+            game.node(0).comment.as_deref(),
+            Some("[%csl Ge5] board notes")
+        );
+        let game2 = Game::from_pgn(game.to_pgn()).unwrap();
+        assert_eq!(game2.node(0).comment.as_deref(), Some("[%csl Ge5] board notes"));
+        assert_eq!(game2.mainline().len(), 2);
     }
 
     #[test]
