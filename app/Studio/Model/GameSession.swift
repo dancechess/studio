@@ -100,9 +100,16 @@ final class GameSession {
 
     var isModified: Bool { game.toPgn() != baselinePgn }
 
-    /// The position to analyze: nil at the root (no move highlighted), so
-    /// the engine only runs once the user actually selects a move.
-    var highlightedFen: String? { currentNode == 0 ? nil : fen }
+    private static let standardStart = startFen()
+
+    /// The position to analyze: nil at the root of a standard game (no move
+    /// highlighted, and analyzing the start position is noise) — but a
+    /// custom-FEN game's root IS the position of interest (puzzle, endgame),
+    /// so it analyzes like any selected move.
+    var highlightedFen: String? {
+        if currentNode != 0 { return fen }
+        return fen == Self.standardStart ? nil : fen
+    }
 
     /// Called when the list this game came from is replaced: the id no
     /// longer refers to it, so edits become scratch instead of risking a

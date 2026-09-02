@@ -84,10 +84,12 @@ struct MainWindow: View {
             // dev hook (like DCS_KEY_DEBUG): open the engine panel on
             // launch and jump to the game's end so smoke runs can screenshot
             // live analysis without pressing ⌘E (engine idles at the root)
-            if ProcessInfo.processInfo.environment["DCS_AUTO_ENGINE"] != nil {
+            if let mode = ProcessInfo.processInfo.environment["DCS_AUTO_ENGINE"] {
                 engine.togglePanel(target: session.highlightedFen)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                    session.toEnd()
+                if mode != "root" { // "root" stays put (FEN-game screenshots)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        session.toEnd()
+                    }
                 }
             }
             // dev hook: open a PGN on launch (exercises the cache path
