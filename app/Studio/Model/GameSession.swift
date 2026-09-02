@@ -353,18 +353,22 @@ final class GameSession {
 
     func cancelPromotion() { pendingPromotion = nil }
 
-    /// Inserts an engine line as a variation from the current node without
-    /// moving the cursor (ChessBase kibitzer-copy behavior). Reuses existing
-    /// nodes when the moves are already in the tree.
+    /// Inserts an engine line as a variation from the current node and
+    /// follows it: the cursor lands on the line's first move (step → to
+    /// walk the rest), and the engine re-analyzes from there. Reuses
+    /// existing nodes when the moves are already in the tree.
     func insertEngineLine(_ sans: [String]) {
         guard !sans.isEmpty else { return }
         snapshot()
         do {
             var node = currentNode
+            var firstInserted: UInt32?
             for san in sans {
                 node = try game.addMove(id: node, san: san)
+                if firstInserted == nil { firstInserted = node }
             }
             rebuildTokens()
+            if let firstInserted { select(firstInserted) }
         } catch {
             errorText = "\(error)"
         }
