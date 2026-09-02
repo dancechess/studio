@@ -3,7 +3,7 @@
 Download `@DMG@`, open it, drag **DC Studio** into Applications.
 
 The build is ad-hoc signed but **not notarized**, so the first launch is
-blocked with *"Apple could not verify "DC Studio" is free of malware..."*.
+blocked with *Apple could not verify "DC Studio" is free of malware…*
 That dialog offers no way to continue — dismiss it without letting it move the
 app to the trash, then either run
 
