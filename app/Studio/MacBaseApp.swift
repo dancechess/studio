@@ -167,7 +167,7 @@ struct StudioApp: App {
             MainWindow()
         }
         .commands { StudioCommands() }
-        // standalone game windows (⌘-double-click / 新对局); -1 = blank board
+        // standalone game windows (⌘-double-click / new game); -1 = blank board
         WindowGroup(id: "game", for: Int64.self) { $gameId in
             GameWindow(gameId: gameId)
         } defaultValue: {

@@ -7,6 +7,6 @@ app/.build/
 app/FFI/include/
 dist/
 
-# AI 交接文档:留在工作目录供 session 自动加载,但不进公开仓库
+# AI handover notes: kept in the working directory, never in the repository
 AGENTS.md
 CLAUDE.md

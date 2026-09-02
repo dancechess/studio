@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 import DanceChessCore
 #endif
 
-/// Standalone game window (⌘-double-click from the list, or 新对局).
+/// Standalone game window (⌘-double-click from the list, or a new game).
 /// The single-window flow lives in MainWindow; this one keeps its own
 /// Open/Paste PGN toolbar for scratch use.
 struct GameWindow: View {
