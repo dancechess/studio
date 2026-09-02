@@ -28,28 +28,49 @@ coaches on macOS. Part of the DanceChess family.
   scoresheets become clean PGN. Create a new file and build a collection
   from scratch.
 
-## Requirements
+## Install
 
-- Apple Silicon Mac, macOS 14 (Sonoma) or later
-- To build: Xcode Command Line Tools, Rust, and `brew install stockfish`
-  (full Xcode is *not* required)
+Download the latest `DC-Studio-<version>-arm64.dmg` from
+[Releases](https://github.com/dancechess/studio/releases/latest), open it, and
+drag **DC Studio** into Applications. Apple Silicon Mac, macOS 14 (Sonoma) or
+later — there is no Intel build. Stockfish rides along inside the bundle, so
+there is nothing else to install.
+
+The app is ad-hoc signed but **not notarized** — there is no paid Apple
+Developer account behind this project — so macOS quarantines it on first
+launch and refuses to open it. Clear the quarantine flag once:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/DC Studio.app"
+```
+
+Prefer not to touch the terminal? Try to open the app, let macOS block it, then
+go to **System Settings ▸ Privacy & Security** and click **Open Anyway**.
 
 ## Building
 
+Needs the Xcode Command Line Tools, Rust, and `brew install stockfish` — full
+Xcode is *not* required.
+
 ```bash
-git clone <this repo> && cd <repo>
+git clone https://github.com/dancechess/studio.git && cd studio
 ./scripts/make-app.sh        # → "dist/DC Studio.app", double-clickable
 ```
 
 Development without Xcode:
 
 ```bash
-cd core && cargo test        # Rust core: movegen, PGN tree, SQLite (28 tests)
+cd core && cargo test        # Rust core: movegen, PGN tree, SQLite (29 tests)
 cd app && swift run StudioSmoke   # end-to-end smoke incl. real Stockfish
 cd app && swift run StudioApp     # run the app from the CLI
 ```
 
 An Xcode project is optional: `brew install xcodegen && xcodegen -s app/project.yml`.
+
+Cutting a release: `VERSION=0.2.0 ./scripts/make-release.sh` builds the DMG on
+your machine; pushing a `v*` tag runs that same script on a GitHub Actions
+runner and publishes the DMG to Releases
+(see [.github/workflows/release.yml](.github/workflows/release.yml)).
 
 ## Good to know
 
@@ -68,3 +89,8 @@ GPLv3 — see [LICENSE](LICENSE). DC Studio stands on GPL shoulders:
 [Stockfish](https://stockfishchess.org) (bundled engine),
 [shakmaty](https://github.com/niklasf/shakmaty) (move generation),
 and the Merida piece set by Armando Hernandez Marroquin.
+
+The released DMG ships the Stockfish binary as-is; its corresponding source
+lives at <https://github.com/official-stockfish/Stockfish> (the exact version
+is named in each release's notes). The corresponding source for DC Studio
+itself is this repository at the release's tag.

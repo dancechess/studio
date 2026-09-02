@@ -1,0 +1,83 @@
+name: Release
+
+# A tag push cuts a public release; the manual run only builds the DMG and
+# leaves it as a workflow artifact, so the pipeline can be tested without
+# burning a version number.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, without the leading v"
+        required: true
+        default: "0.0.0-test"
+
+permissions:
+  contents: write
+
+jobs:
+  dmg:
+    # Apple Silicon runner — the app is arm64-only, there is no Intel build
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: v
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Rust
+        run: |
+          command -v cargo || curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+            | sh -s -- -y --default-toolchain stable --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      # make-app.sh bundles whatever stockfish is on PATH into the .app
+      - name: Install Stockfish
+        run: brew install stockfish
+
+      - name: Test the core
+        run: cargo test --manifest-path core/Cargo.toml
+
+      - name: Build DMG
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: ./scripts/make-release.sh
+
+      - name: Compose release notes
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          DMG="DC-Studio-$VERSION-arm64.dmg"
+          SHA="$(cut -d' ' -f1 "dist/$DMG.sha256")"
+          ENGINE="$( { echo uci; echo quit; } | stockfish | sed -n 's/^id name //p' | head -1)"
+          sed -e "s|@DMG@|$DMG|g" -e "s|@SHA@|$SHA|g" \
+              -e "s|@ENGINE@|$ENGINE|g" -e "s|@TAG@|$GITHUB_REF_NAME|g" \
+              .github/release-notes.tmpl.md > dist/NOTES.md
+          cat dist/NOTES.md
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DC-Studio-${{ steps.v.outputs.version }}-arm64
+          path: |
+            dist/*.dmg
+            dist/*.sha256
+
+      - name: Publish release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "DC Studio $VERSION" \
+            --notes-file dist/NOTES.md \
+            "dist/DC-Studio-$VERSION-arm64.dmg" \
+            "dist/DC-Studio-$VERSION-arm64.dmg.sha256"
