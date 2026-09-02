@@ -21,6 +21,9 @@ struct SetupPositionSheet: View {
     @State private var castleBK = true
     @State private var castleBQ = true
     @State private var errorText: String?
+    // drag-to-move state (dragging off the board deletes the piece)
+    @State private var dragPiece: Character?
+    @State private var dragLocation: CGPoint?
 
     private let lightColor = Color(red: 0.94, green: 0.85, blue: 0.71)
     private let darkColor = Color(red: 0.71, green: 0.53, blue: 0.39)
@@ -73,16 +76,55 @@ struct SetupPositionSheet: View {
     }
 
     private var board: some View {
-        VStack(spacing: 0) {
-            ForEach((0..<8).reversed(), id: \.self) { rank in
-                HStack(spacing: 0) {
-                    ForEach(0..<8, id: \.self) { file in
-                        square(rank * 8 + file)
+        ZStack(alignment: .topLeading) {
+            VStack(spacing: 0) {
+                ForEach((0..<8).reversed(), id: \.self) { rank in
+                    HStack(spacing: 0) {
+                        ForEach(0..<8, id: \.self) { file in
+                            square(rank * 8 + file)
+                        }
                     }
                 }
             }
+            if let dragPiece, let dragLocation {
+                PieceView(piece: BoardPiece(symbol: dragPiece), cell: cell)
+                    .position(dragLocation)
+                    .allowsHitTesting(false)
+            }
         }
+        .frame(width: cell * 8, height: cell * 8)
         .overlay(Rectangle().strokeBorder(Color.secondary.opacity(0.4)))
+        // drag an already-placed piece to another square; off the board = delete
+        .gesture(
+            DragGesture(minimumDistance: 3, coordinateSpace: .local)
+                .onChanged { value in
+                    if dragPiece == nil {
+                        guard let from = squareAt(value.startLocation),
+                              let piece = squares[from] else { return }
+                        dragPiece = piece
+                        squares[from] = nil
+                        errorText = nil
+                    }
+                    dragLocation = value.location
+                }
+                .onEnded { value in
+                    defer {
+                        dragPiece = nil
+                        dragLocation = nil
+                    }
+                    guard let piece = dragPiece else { return }
+                    if let to = squareAt(value.location) {
+                        squares[to] = piece
+                    } // else: dropped off the board — the piece stays removed
+                }
+        )
+    }
+
+    private func squareAt(_ point: CGPoint) -> Int? {
+        let file = Int(floor(point.x / cell))
+        let rank = 7 - Int(floor(point.y / cell))
+        guard (0..<8).contains(file), (0..<8).contains(rank) else { return nil }
+        return rank * 8 + file
     }
 
     private func square(_ index: Int) -> some View {
