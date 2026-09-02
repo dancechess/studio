@@ -37,15 +37,22 @@ later — there is no Intel build. Stockfish rides along inside the bundle, so
 there is nothing else to install.
 
 The app is ad-hoc signed but **not notarized** — there is no paid Apple
-Developer account behind this project — so macOS quarantines it on first
-launch and refuses to open it. Clear the quarantine flag once:
+Developer account behind this project — so the first launch is blocked with:
+
+> Apple could not verify "DC Studio" is free of malware that may harm your Mac
+> or compromise your privacy.
+
+That dialog offers no way to continue. Dismiss it — **without** letting it move
+the app to the trash — and then do one of:
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/DC Studio.app"
 ```
 
-Prefer not to touch the terminal? Try to open the app, let macOS block it, then
-go to **System Settings ▸ Privacy & Security** and click **Open Anyway**.
+...after which it opens normally. Or, without the terminal: open **System
+Settings ▸ Privacy & Security**, scroll down to the Security section, and click
+**Open Anyway** next to the message about DC Studio. That button only appears
+after you have tried to open the app at least once.
 
 ## Building
 

@@ -2,15 +2,17 @@
 
 Download `@DMG@`, open it, drag **DC Studio** into Applications.
 
-The build is ad-hoc signed but **not notarized**, so macOS quarantines it on
-first launch. Clear that once:
+The build is ad-hoc signed but **not notarized**, so the first launch is
+blocked with *"Apple could not verify "DC Studio" is free of malware..."*.
+That dialog offers no way to continue — dismiss it without letting it move the
+app to the trash, then either run
 
 ```
 xattr -dr com.apple.quarantine "/Applications/DC Studio.app"
 ```
 
-GUI equivalent: try to open the app, then go to **System Settings ▸ Privacy &
-Security** and click **Open Anyway**.
+or open **System Settings ▸ Privacy & Security** and click **Open Anyway**
+next to the message about DC Studio.
 
 ```
 sha256  @SHA@
