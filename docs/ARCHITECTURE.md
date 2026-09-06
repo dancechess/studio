@@ -28,11 +28,11 @@ more naturally expressed in Swift, so `UCIKit` owns it.
 | Module | Responsibility |
 |---|---|
 | `position.rs` | Stateless functions over a FEN: `legal_moves_san`, `legal_moves_detailed`, `apply_san`, `start_fen`. Correctness pinned by perft tests. |
-| `game.rs` | The `Game` object: variation tree in an arena (`Vec<Node>`, `children[0]` is the main line), PGN parsing and serialization, and every editing operation (`add_move`, `set_comment`, `add_nag`, `promote_variation`, `delete_node`). |
-| `notation.rs` | `notation_tokens()` — flattens the tree into the token stream the notation panel renders. The contract is in [NOTATION-VIEW.md](NOTATION-VIEW.md). |
-| `db.rs` | The `Database` object: streaming PGN import, paged and sorted game lists, substring search over White/Black/Event, opening-tree aggregation, write-back to `.pgn`. |
+| `game.rs` | The `Game` object: variation tree in an arena (`Vec<Node>`, `children[0]` is the main line), PGN parsing and serialization, and every editing operation (`add_move`, `set_comment`, `add_nag`, `promote_variation`, `delete_node`, `merge_pgn` — grafts another game's whole tree onto this one, shared moves landing on the same nodes). |
+| `notation.rs` | `notation_tokens()` — flattens the tree into the token stream the notation panel renders, including a `Diagram` token for NAG `$220`. The contract is in [NOTATION-VIEW.md](NOTATION-VIEW.md). |
+| `db.rs` | The `Database` object: streaming PGN import, paged and sorted game lists, one `GameFilter` (text, result, date range, Elo range, position) behind `query_games`/`count_games`, opening-tree aggregation, write-back to `.pgn`. |
 
-`cargo test` covers all of it (29 tests), including PGN round-trip fidelity —
+`cargo test` covers all of it (33 tests), including PGN round-trip fidelity —
 the property everything else leans on.
 
 ## The FFI contract
@@ -128,6 +128,21 @@ Two behaviours are deliberate:
 
 The engine is looked up inside the app bundle first (`make-app.sh` embeds it),
 then on the Homebrew path.
+
+## Whole-game analysis and printing
+
+`GameAnalyzer` (`app/Studio/Model/`) runs its own Stockfish over the main
+line at a fixed depth, computes every mark first, and hands the lot to
+`GameSession.applyAnalysis`, which lands them under one undo snapshot. The
+live panel's engine yields while a run is in progress, so there is never more
+than one search per window.
+
+Printing reuses the notation renderer: `NotationView.document(for:)` is the
+panel's attributed string with a title block in front, laid into an
+`NSTextView` the width of the paper minus margins and handed to
+`NSPrintOperation`, which paginates it. A PDF is the same operation with
+`jobDisposition = .save`. Diagrams are `NSTextAttachment`s carrying a board
+rendered by `BoardImage`, tagged with the move's node id like any other run.
 
 ## The Swift side
 

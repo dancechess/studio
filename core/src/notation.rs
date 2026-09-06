@@ -23,6 +23,15 @@ pub enum TokenKind {
     OpenParen,
     CloseParen,
     ParagraphBreak,
+    /// A diagram of the position after this move (NAG $220/$221, the
+    /// ChessBase convention). `text` is empty; the renderer draws the board
+    /// at `node_id`'s position, on its own line.
+    Diagram,
+}
+
+/// NAGs that mean "show a diagram here" rather than an evaluation.
+pub(crate) fn is_diagram_nag(nag: u8) -> bool {
+    nag == 220 || nag == 221
 }
 
 #[derive(uniffi::Record, Debug, Clone, PartialEq, Eq)]
@@ -131,8 +140,12 @@ impl GameInner {
                 depth,
             });
         }
-        let (suffixes, evals): (Vec<u8>, Vec<u8>) =
-            self.node_nags(id).iter().partition(|n| suffix_glyph(**n).is_some());
+        let nags = self.node_nags(id);
+        let diagram = nags.iter().any(|n| is_diagram_nag(*n));
+        let (suffixes, evals): (Vec<u8>, Vec<u8>) = nags
+            .iter()
+            .filter(|n| !is_diagram_nag(**n))
+            .partition(|n| suffix_glyph(**n).is_some());
         let mut text = self.node_san(id);
         for n in &suffixes {
             text.push_str(suffix_glyph(*n).unwrap());
@@ -160,6 +173,15 @@ impl GameInner {
                 depth,
             });
             interrupting = true;
+        }
+        if diagram {
+            out.push(NotationToken {
+                kind: TokenKind::Diagram,
+                text: String::new(),
+                node_id: Some(id),
+                depth,
+            });
+            interrupting = true; // the diagram breaks the flow like a comment
         }
         interrupting
     }
@@ -200,6 +222,7 @@ mod tests {
                 ParagraphBreak => format!("¶{}", t.depth),
                 OpenParen => "(".into(),
                 CloseParen => ")".into(),
+                Diagram => "[#]".into(),
                 Comment => format!("{{{}}}", t.text),
                 _ => t.text.clone(),
             })
@@ -280,5 +303,14 @@ mod tests {
         }
         let move_tokens = tokens.iter().filter(|t| t.kind == Move).count();
         assert_eq!(move_tokens, reachable);
+    }
+
+    #[test]
+    fn diagram_nag_becomes_a_token_not_a_glyph() {
+        let t = toks("1. e4 $220 e5 2. Nf3 *");
+        let d = dump(&t);
+        assert!(d.contains("e4 [#] 1... e5"), "{d}");
+        assert!(!d.contains("$220"), "{d}");
+        assert_eq!(t.iter().find(|x| x.kind == Diagram).unwrap().node_id, Some(1));
     }
 }

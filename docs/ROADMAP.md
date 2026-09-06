@@ -38,6 +38,27 @@ bundled in the app.
 game counts, a W/D/L bar, white's score — and filters the game list to the
 games that reach it. Matching is by Zobrist hash, so transpositions count.
 
+**Whole-game analysis.** Game ▸ Analyze Game… walks the main line at a fixed
+depth and marks the moves that lose more than a threshold (`?!` `?` `??`),
+writes what the eval did ("+2.16 → +3.27"), and inserts the engine's line as a
+variation. One undo step for the whole run; existing comments are appended to.
+A mating move is never marked, and neither is the engine's own first choice
+(an eval that drops after a forced move is the search seeing further, not the
+player going wrong).
+
+**Merging games.** Select several rows and Merge Selected Games: the first
+game's tree takes the others as variations wherever they diverge, comments and
+NAGs included. The result opens as a new, unsaved game.
+
+**Diagrams and paper.** `⌘D` puts a diagram after the current move — stored as
+NAG `$220`, the ChessBase convention, so it round-trips. File ▸ Print Game… and
+Export Game as PDF… lay out a title block and the notation exactly as the
+panel shows it, diagrams included.
+
+**Filtering.** Beside the search field, a filter for result, date range and
+Elo range (both players); every criterion combines with the text search and
+with the reference view's position filter.
+
 **Setup positions.** `⌥⌘N` opens a position editor (place pieces, side to move,
 castling rights filtered by what is actually possible) and starts a new game
 from a `[SetUp]`/`[FEN]` header. Engine analysis works at the root of such a
@@ -54,17 +75,20 @@ game, which is what makes studies and tactics puzzles usable.
 - **A source file edited outside the app discards in-app edits.** Cache
   freshness is a modification-time comparison; if the `.pgn` is newer, the
   cache is rebuilt from it. Save before editing the file elsewhere.
-- **Not every column sorts.** Sorting exists for #, White, Black, Event, Date,
-  Round, ECO and White Elo — not for Result or Black Elo. Adding one means
-  extending `GameSort` in Rust first.
 - **No multi-database management**, no cross-file search, no player or
-  tournament index.
+  tournament index, no position or material search.
+- **Analysis is main line only** and uses a fixed depth; there is no
+  time-based or full-tree pass, and no tablebases.
+- **Printing is the notation as shown**; there is no page layout to speak of
+  beyond a title block, and no HTML export.
 - **Not sandboxed.** Sandboxing will need security-scoped bookmarks before
   write-back can survive relaunches.
 
 ## Ideas, not commitments
 
 - Engine-correlation and game-quality analysis.
+- An online opening reference (the lichess masters / lichess explorer
+  endpoints need no token; a local cache keyed by position is what matters).
 - Signing, notarization, and a Sparkle update feed.
 - Deeper opening-book work (repertoire files, novelty detection).
 

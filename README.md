@@ -21,6 +21,13 @@ coaches on macOS. Part of the DanceChess family.
 - **Engine analysis** (⌘E) — bundled Stockfish, MultiPV, eval bar, click an
   engine line to insert it as a variation. The engine only runs while a move
   is selected — no idle CPU burn.
+- **Whole-game analysis** (⌥⌘A) — marks the losing moves `?! ? ??`, writes
+  what the eval did, inserts the engine's line beside each; one undo step.
+- **Merge games** — select several rows; the first game's tree takes the
+  others as variations, comments included.
+- **Diagrams, print, PDF** — `⌘D` puts a diagram after a move (stored as
+  ChessBase's `$220`); File ▸ Print Game… / Export Game as PDF….
+- **Filters** — result, date range, Elo range, combined with text search.
 - **Opening reference** (⌘T) — move statistics with W/D/L for the current
   position across the open file, and the list filters to the games that
   reach it (transposition-aware).

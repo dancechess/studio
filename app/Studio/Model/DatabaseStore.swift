@@ -117,6 +117,8 @@ final class DatabaseStore {
         }
     }
 
+    func setStatus(_ text: String) { statusText = text }
+
     func clearRecents() {
         recentFiles = []
         UserDefaults.standard.removeObject(forKey: Self.recentFilesKey)

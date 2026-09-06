@@ -47,7 +47,9 @@ struct NotationView: NSViewRepresentable {
         coordinator.session = session
         if coordinator.version != session.tokensVersion {
             coordinator.version = session.tokensVersion
-            let (text, ranges) = Self.buildAttributed(session.tokens)
+            let game = session.game
+            let (text, ranges) = Self.buildAttributed(session.tokens,
+                                                      fenAt: { try? game.fenAt(id: $0) })
             coordinator.nodeRanges = ranges
             coordinator.highlighted = nil
             textView.textStorage?.setAttributedString(text)
@@ -102,6 +104,8 @@ struct NotationView: NSViewRepresentable {
             menu.addItem(item("Promote Variation", #selector(menuPromote), enabled: editable))
             menu.addItem(item("Delete From Here…", #selector(menuDelete), enabled: editable))
             menu.addItem(item("Edit Comment…", #selector(menuComment), enabled: editable))
+            menu.addItem(item(session.hasDiagramAtCurrent ? "Remove Diagram" : "Insert Diagram",
+                              #selector(menuDiagram), enabled: editable))
             menu.addItem(item("Clear Arrows & Highlights", #selector(menuClearAnnotations),
                               enabled: !session.annotations.isEmpty))
             menu.addItem(.separator())
@@ -134,6 +138,7 @@ struct NotationView: NSViewRepresentable {
             if let session { confirmDeleteCurrent(session) }
         }
         @objc private func menuComment() { session?.openCommentEditor() }
+        @objc private func menuDiagram() { session?.toggleDiagram() }
         @objc private func menuNag(_ sender: NSMenuItem) {
             session?.applyNag(UInt8(sender.tag))
         }
@@ -158,7 +163,11 @@ struct NotationView: NSViewRepresentable {
 
     private static let indentStep: CGFloat = 16
 
-    static func buildAttributed(_ tokens: [NotationToken]) -> (NSAttributedString, [UInt32: NSRange]) {
+    /// Diagram size in the panel and on paper.
+    static let diagramSize: CGFloat = 168
+
+    static func buildAttributed(_ tokens: [NotationToken],
+                                fenAt: (UInt32) -> String?) -> (NSAttributedString, [UInt32: NSRange]) {
         let text = NSMutableAttributedString()
         var ranges: [UInt32: NSRange] = [:]
         var paragraph = paragraphStyle(indent: 0)
@@ -225,11 +234,52 @@ struct NotationView: NSViewRepresentable {
                 attrs[.dcsNode] = tagged(token)
                 _ = append(commentText ?? token.text, attrs)
                 needSpace = true
+            case .diagram:
+                // its own line, keeping the paragraph's indent; the
+                // attachment carries the node id so a click selects the move
+                guard let node = token.nodeId, let fen = fenAt(node) else { break }
+                let attachment = NSTextAttachment()
+                attachment.image = BoardImage.render(fen: fen, size: diagramSize)
+                attachment.bounds = NSRect(x: 0, y: 0, width: diagramSize, height: diagramSize)
+                _ = append("\n", [:])
+                let picture = NSMutableAttributedString(attachment: attachment)
+                picture.addAttributes([.dcsNode: tagged(token), .paragraphStyle: paragraph],
+                                      range: NSRange(location: 0, length: picture.length))
+                text.append(picture)
+                _ = append("\n", [:])
+                needSpace = false
             case .paragraphBreak, .closeParen:
                 break
             }
         }
         return (text, ranges)
+    }
+
+    /// The game as a printable document: a title block, then the notation
+    /// exactly as the panel shows it (diagrams included).
+    static func document(for session: GameSession) -> NSAttributedString {
+        let game = session.game
+        let h = { (key: String) -> String in game.header(key: key) ?? "" }
+        let doc = NSMutableAttributedString()
+        let white = h("White"), black = h("Black")
+        let title = black.isEmpty ? white : "\(white) – \(black)"
+        doc.append(NSAttributedString(string: title.isEmpty ? "Game" : title, attributes: [
+            .font: NSFont.systemFont(ofSize: 17, weight: .bold),
+            .foregroundColor: NSColor.labelColor,
+        ]))
+        let details = [h("Event"), h("Site"), h("Date"), h("Round").isEmpty ? "" : "round \(h("Round"))",
+                       h("Result"), h("ECO")]
+            .filter { !$0.isEmpty && $0 != "?" }
+            .joined(separator: " · ")
+        if !details.isEmpty {
+            doc.append(NSAttributedString(string: "\n" + details, attributes: [
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ]))
+        }
+        doc.append(NSAttributedString(string: "\n\n"))
+        doc.append(buildAttributed(session.tokens, fenAt: { try? game.fenAt(id: $0) }).0)
+        return doc
     }
 
     private static func tagged(_ token: NotationToken) -> Any {

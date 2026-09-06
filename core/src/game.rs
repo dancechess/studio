@@ -101,6 +101,36 @@ impl GameInner {
         Ok(pos)
     }
 
+    /// Validates `san` in the position at `id`, normalizes it (check and
+    /// mate suffixes), and returns the child node for it — an existing one
+    /// when that move is already there, else a new one. The bool is
+    /// "created".
+    pub(crate) fn add_child(&mut self, id: u32, san: &str) -> Result<(u32, bool), ChessError> {
+        let pos = self.position_at(id)?;
+        let parsed: San = san.parse().map_err(|e| ChessError::InvalidMove {
+            reason: format!("{e}"),
+        })?;
+        let m = parsed.to_move(&pos).map_err(|e| ChessError::InvalidMove {
+            reason: format!("{e}"),
+        })?;
+        let san = shakmaty::san::SanPlus::from_move(pos, &m).to_string();
+        if let Some(&existing) = self.nodes[id as usize]
+            .children
+            .iter()
+            .find(|&&c| self.nodes[c as usize].san == san)
+        {
+            return Ok((existing, false));
+        }
+        let new_id = self.nodes.len() as u32;
+        self.nodes.push(Node {
+            san,
+            parent: Some(id),
+            ..Default::default()
+        });
+        self.nodes[id as usize].children.push(new_id);
+        Ok((new_id, true))
+    }
+
     /// (fullmove number, is_white_move) of the move at `id`.
     /// For the root (no move) it reports the upcoming move instead.
     pub(crate) fn numbering(&self, id: u32) -> (u32, bool) {
@@ -397,31 +427,61 @@ impl Game {
     /// Returns the id of the reached node.
     pub fn add_move(&self, id: u32, san: String) -> Result<u32, ChessError> {
         let mut inner = self.inner.lock().unwrap();
-        // validate against the actual position
-        let pos = inner.position_at(id)?;
-        let parsed: San = san.parse().map_err(|e| ChessError::InvalidMove {
-            reason: format!("{e}"),
-        })?;
-        let m = parsed.to_move(&pos).map_err(|e| ChessError::InvalidMove {
-            reason: format!("{e}"),
-        })?;
-        // normalize to SanPlus so check/mate suffixes are consistent
-        let san = shakmaty::san::SanPlus::from_move(pos, &m).to_string();
-        if let Some(&existing) = inner.nodes[id as usize]
-            .children
-            .iter()
-            .find(|&&c| inner.nodes[c as usize].san == san)
-        {
-            return Ok(existing);
+        inner.add_child(id, &san).map(|(node, _)| node)
+    }
+
+    /// Merges every line of another game into this one: shared moves fall
+    /// onto the same nodes, the first divergence becomes a variation, and
+    /// so on down the tree. Comments and NAGs on moves that already exist
+    /// here are kept as they are (the game being merged into wins); on new
+    /// moves they come across. Games starting from a different position
+    /// are refused. Returns how many moves were added.
+    pub fn merge_pgn(&self, pgn: String) -> Result<u32, ChessError> {
+        let mut reader = BufferedReader::new_cursor(&pgn);
+        let mut builder = GameBuilder::default();
+        let other = reader
+            .read_game(&mut builder)
+            .map_err(|e| ChessError::InvalidMove {
+                reason: format!("PGN read error: {e}"),
+            })?
+            .ok_or(ChessError::InvalidMove {
+                reason: "no game found in PGN".into(),
+            })?;
+        let mut inner = self.inner.lock().unwrap();
+        if normalized_fen(&other.root_fen) != normalized_fen(&inner.root_fen) {
+            return Err(ChessError::InvalidFen {
+                reason: "the games start from different positions".into(),
+            });
         }
-        let new_id = inner.nodes.len() as u32;
-        inner.nodes.push(Node {
-            san,
-            parent: Some(id),
-            ..Default::default()
-        });
-        inner.nodes[id as usize].children.push(new_id);
-        Ok(new_id)
+        let mut added = 0u32;
+        let mut stack = vec![(ROOT_ID, ROOT_ID)]; // (other node, our node)
+        while let Some((src, dst)) = stack.pop() {
+            // children in reverse so the main line is grafted first and
+            // keeps its place ahead of the variations
+            for &child in other.nodes[src as usize].children.iter().rev() {
+                let src_node = &other.nodes[child as usize];
+                let Ok((ours, created)) = inner.add_child(dst, &src_node.san) else {
+                    continue; // an illegal move in the other game: skip that line
+                };
+                if created {
+                    added += 1;
+                    inner.nodes[ours as usize].nags = src_node.nags.clone();
+                    inner.nodes[ours as usize].comment = src_node.comment.clone();
+                } else {
+                    let ours_node = &mut inner.nodes[ours as usize];
+                    for nag in &src_node.nags {
+                        if !ours_node.nags.contains(nag) {
+                            ours_node.nags.push(*nag);
+                        }
+                    }
+                    if ours_node.comment.is_none() {
+                        ours_node.comment = src_node.comment.clone();
+                    }
+                }
+                stack.push((child, ours));
+            }
+        }
+        Ok(added)
     }
 
     pub fn set_comment(&self, id: u32, comment: Option<String>) {
@@ -468,6 +528,12 @@ impl Game {
     pub fn to_pgn(&self) -> String {
         self.inner.lock().unwrap().write_pgn()
     }
+}
+
+/// The four fields that define a position (move counters differ between
+/// two routes to the same position and must not make two games "different").
+fn normalized_fen(fen: &str) -> String {
+    fen.split_whitespace().take(4).collect::<Vec<_>>().join(" ")
 }
 
 // --- PGN parsing ---
@@ -669,5 +735,35 @@ mod tests {
                 (n.san, n.nags, n.comment, n.children.len())
             })
             .collect()
+    }
+
+    #[test]
+    fn merge_shares_moves_and_keeps_our_comments() {
+        let a = Game::from_pgn(
+            "1. e4 { king pawn } e5 2. Nf3 Nc6 3. Bb5 a6 *".into()).unwrap();
+        // same first three plies, then a different black move, with prose
+        let added = a
+            .merge_pgn("1. e4 { ours wins } e5 2. Nf3 Nf6 $1 { Petroff } 3. Nxe5 d6 *".into())
+            .unwrap();
+        assert_eq!(added, 3); // Nf6, Nxe5, d6
+        let pgn = a.to_pgn();
+        assert!(pgn.contains("1. e4 { king pawn }"), "existing comment kept: {pgn}");
+        assert!(pgn.contains("(2... Nf6 $1 { Petroff } 3. Nxe5 d6)"), "{pgn}");
+        // merging the same game again adds nothing
+        assert_eq!(a.merge_pgn("1. e4 e5 2. Nf3 Nf6 3. Nxe5 d6 *".into()).unwrap(), 0);
+        // a game with a variation merges the variation too
+        let added = a.merge_pgn("1. e4 e5 2. Nf3 (2. Nc3 Nf6) 2... Nc6 *".into()).unwrap();
+        assert_eq!(added, 2);
+        assert!(a.to_pgn().contains("(2. Nc3 Nf6)"));
+        // the main line of the first game is still the main line
+        assert_eq!(a.mainline().len(), 6);
+    }
+
+    #[test]
+    fn merge_refuses_a_different_start_position() {
+        let a = Game::from_pgn("1. e4 e5 *".into()).unwrap();
+        let other = "[SetUp \"1\"]\n[FEN \"8/8/8/8/8/8/8/K6k w - - 0 1\"]\n\n1. Kb1 *";
+        assert!(a.merge_pgn(other.into()).is_err());
+        assert_eq!(a.mainline().len(), 2);
     }
 }

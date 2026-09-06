@@ -30,6 +30,7 @@ the main line.
 | `Comment` | the comment body | Braces stripped. |
 | `OpenParen` / `CloseParen` | | Only for nested variations at depth ≥ 2. |
 | `ParagraphBreak` | | `depth` is the indent level of the *following* paragraph. |
+| `Diagram` | | A board of the position **after** this move, stored as NAG `$220`/`$221` (the ChessBase convention, so it round-trips). `text` is empty; render it on its own line, tagged with the move's `node_id` so a click selects the move. It interrupts the flow like a comment, so the next black move restates its number. |
 
 ### The rendering contract
 
@@ -89,6 +90,7 @@ The board and notation panel have focus. This is the full editing key map:
 | `⌘↑` | Promote the current variation. |
 | `!` `?` | Apply the corresponding NAG. Pressing the same key again clears it; a NAG of the same class replaces the previous one. |
 | `Return` / `⌘A` | Open the comment editor. |
+| `⌘D` | Insert / remove a diagram after the current move (menu: Game ▸ Insert Diagram). |
 | `f` / `⇧⌘F` | Flip the board. |
 | `⌘Z` / `⇧⌘Z` | Undo / redo (a stack of whole-game PGN snapshots). |
 | `Esc` | Back to the game list. |
@@ -131,6 +133,8 @@ overlay.
 `notation.rs` is the authority. Suffix NAGs folded into the move text:
 
 `$1` ! `$2` ? `$3` !! `$4` ?? `$5` !? `$6` ?!
+
+`$220`/`$221` are not glyphs: they become a `Diagram` token (above).
 
 Standalone evaluation glyphs:
 

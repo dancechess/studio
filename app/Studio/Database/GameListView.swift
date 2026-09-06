@@ -18,6 +18,8 @@ final class GameListController {
     func select(id: Int64) { coordinator?.selectQuietly(id: id) }
     /// The selected game's id, if any (delete-key handling).
     var selectedGameId: Int64? { coordinator?.currentSelectedId }
+    /// Every selected game, in row order (Merge Selected Games).
+    var selectedGameIds: [Int64] { coordinator?.selectedIds ?? [] }
 }
 
 /// The game list: an NSTableView (SwiftUI `Table` chokes on 100k rows) with
@@ -41,6 +43,8 @@ struct GameListView: NSViewRepresentable {
     let onActivate: (Int64, _ commandKey: Bool) -> Void
     /// Right-click → Delete Game… (nil disables the menu item).
     let onDeleteRequest: ((Int64) -> Void)?
+    /// Right-click with several rows selected → Merge Selected Games.
+    var onMergeRequest: (([Int64]) -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(view: self) }
 
@@ -48,7 +52,8 @@ struct GameListView: NSViewRepresentable {
         let table = NSTableView()
         table.style = .inset
         table.usesAlternatingRowBackgroundColors = true
-        table.allowsMultipleSelection = false
+        // several rows for Merge; the board previews the anchor row
+        table.allowsMultipleSelection = true
         table.rowHeight = 22
 
         for spec in Coordinator.columns {
@@ -72,6 +77,11 @@ struct GameListView: NSViewRepresentable {
                                 keyEquivalent: "")
         delete.target = context.coordinator
         menu.addItem(delete)
+        let merge = NSMenuItem(title: "Merge Selected Games",
+                               action: #selector(Coordinator.mergeClicked(_:)),
+                               keyEquivalent: "")
+        merge.target = context.coordinator
+        menu.addItem(merge)
         table.menu = menu
         // initial sort indicator mirrors the store (file order)
         table.sortDescriptors = [NSSortDescriptor(key: "number", ascending: true)]
@@ -356,6 +366,17 @@ struct GameListView: NSViewRepresentable {
             return summary(at: table.selectedRow)?.id
         }
 
+        var selectedIds: [Int64] {
+            guard let table else { return [] }
+            return table.selectedRowIndexes.compactMap { summary(at: $0)?.id }
+        }
+
+        @objc func mergeClicked(_ sender: Any?) {
+            let ids = selectedIds
+            guard ids.count >= 2 else { return }
+            view.onMergeRequest?(ids)
+        }
+
         @objc func deleteClicked(_ sender: Any?) {
             guard let table, table.clickedRow >= 0,
                   let game = summary(at: table.clickedRow) else { return }
@@ -363,7 +384,10 @@ struct GameListView: NSViewRepresentable {
         }
 
         @objc func validateMenuItem(_ item: NSMenuItem) -> Bool {
-            view.onDeleteRequest != nil && (table?.clickedRow ?? -1) >= 0
+            if item.action == #selector(mergeClicked(_:)) {
+                return view.onMergeRequest != nil && selectedIds.count >= 2
+            }
+            return view.onDeleteRequest != nil && (table?.clickedRow ?? -1) >= 0
         }
     }
 }

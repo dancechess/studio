@@ -18,6 +18,10 @@ struct WindowActions: Equatable {
     var setupPosition: (() -> Void)?
     var clearAnnotations: (() -> Void)?
     var analyzeGame: (() -> Void)?
+    var insertDiagram: (() -> Void)?
+    var printGame: (() -> Void)?
+    var exportPdf: (() -> Void)?
+    var mergeGames: (() -> Void)?
     var openRecent: ((String) -> Void)?
     var clearRecents: (() -> Void)?
     var recentFiles: [String] = []
@@ -82,6 +86,12 @@ struct StudioCommands: Commands {
             Button("Export Game as PGN…") { actions?.exportGame?() }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(actions?.exportGame == nil)
+            Button("Export Game as PDF…") { actions?.exportPdf?() }
+                .disabled(actions?.exportPdf == nil)
+            Divider()
+            Button("Print Game…") { actions?.printGame?() }
+                .keyboardShortcut("p")
+                .disabled(actions?.printGame == nil)
         }
         CommandMenu("Game") {
             Button("Setup Position…") { actions?.setupPosition?() }
@@ -89,6 +99,11 @@ struct StudioCommands: Commands {
                 .disabled(actions?.setupPosition == nil)
             Button("Clear Arrows & Highlights") { actions?.clearAnnotations?() }
                 .disabled(actions?.clearAnnotations == nil)
+            Button("Insert Diagram") { actions?.insertDiagram?() }
+                .keyboardShortcut("d")
+                .disabled(actions?.insertDiagram == nil)
+            Button("Merge Selected Games") { actions?.mergeGames?() }
+                .disabled(actions?.mergeGames == nil)
             Divider()
             Button("Flip Board") { actions?.flip?() }
                 .keyboardShortcut("f", modifiers: [.command, .shift])

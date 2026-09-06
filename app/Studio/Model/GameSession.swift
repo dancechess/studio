@@ -436,6 +436,17 @@ final class GameSession {
         select(currentNode)
     }
 
+    /// A diagram after the current move: NAG $220, the ChessBase
+    /// convention, so it survives a round trip through other tools.
+    var hasDiagramAtCurrent: Bool {
+        currentNode != 0 && [UInt8](game.node(id: currentNode).nags).contains(220)
+    }
+
+    func toggleDiagram() {
+        guard currentNode != 0 else { return }
+        applyNag(220) // same NAG again removes it
+    }
+
     func clearNags() {
         guard currentNode != 0 else { return }
         snapshot()

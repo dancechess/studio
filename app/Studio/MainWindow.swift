@@ -75,7 +75,8 @@ struct MainWindow: View {
                             setEngaged(true)
                         }
                     },
-                    onDeleteRequest: { confirmAndDelete($0) }
+                    onDeleteRequest: { confirmAndDelete($0) },
+                    onMergeRequest: { mergeGames($0) }
                 )
                 Divider()
                 statusBar
@@ -162,6 +163,24 @@ struct MainWindow: View {
                     session.commitComment()
                     session.back()
                     session.openCommentEditor()
+                }
+            }
+            // dev hooks: diagram + PDF; merge of the first two games
+            if ProcessInfo.processInfo.environment["DCS_AUTO_DIAGRAM"] != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    session.toEnd()
+                    session.back(); session.back(); session.back()
+                    session.toggleDiagram()
+                    GamePrinter.exportPdf(session, to: URL(fileURLWithPath: "/tmp/dcs-diagram.pdf"))
+                    try? session.game.toPgn().write(toFile: "/tmp/dcs-diagram.pgn",
+                                                    atomically: true, encoding: .utf8)
+                }
+            }
+            if ProcessInfo.processInfo.environment["DCS_AUTO_MERGE"] != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    mergeGames([1, 2])
+                    try? session.game.toPgn().write(toFile: "/tmp/dcs-merge.pgn",
+                                                    atomically: true, encoding: .utf8)
                 }
             }
             // dev hook: whole-game analysis at the given depth, result PGN
@@ -255,6 +274,10 @@ struct MainWindow: View {
             setupPosition: { showSetupSheet = true },
             clearAnnotations: { session.clearAnnotations() },
             analyzeGame: { showAnalyzeSheet = true },
+            insertDiagram: { session.toggleDiagram() },
+            printGame: { GamePrinter.print(session) },
+            exportPdf: { GamePrinter.exportPdf(session) },
+            mergeGames: { mergeGames(listController.selectedGameIds) },
             openRecent: { path in
                 guard confirmLeaveGame() else { return }
                 store.openPgn([URL(fileURLWithPath: path)])
@@ -527,6 +550,28 @@ struct MainWindow: View {
             session.resetToBlank()
         }
         setEngaged(true)
+    }
+
+    /// Merge Selected Games: the first game's tree takes the others as
+    /// variations (Rust `merge_pgn`), and the result opens as a new,
+    /// unsaved game — ⌘S appends it to the file. The originals stay put.
+    private func mergeGames(_ ids: [Int64]) {
+        guard ids.count >= 2, confirmLeaveGame() else { return }
+        let pgns = ids.compactMap { store.pgn(for: $0) }
+        guard let first = pgns.first, let merged = try? Game.fromPgn(pgn: first) else { return }
+        var added: UInt32 = 0
+        var skipped = 0
+        for pgn in pgns.dropFirst() {
+            if let n = try? merged.mergePgn(pgn: pgn) { added += n } else { skipped += 1 }
+        }
+        merged.setHeader(key: "Event", value: "Merged: \(pgns.count) games")
+        merged.setHeader(key: "Result", value: "*")
+        listController.deselect()
+        session.loadPgn(merged.toPgn())
+        setEngaged(true)
+        store.setStatus(skipped == 0
+            ? "merged \(pgns.count) games, \(added) moves added"
+            : "merged \(pgns.count - skipped) games (\(skipped) skipped: different start position)")
     }
 
     /// ⌘S — same flow as the standalone window: existing games update in
