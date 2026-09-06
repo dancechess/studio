@@ -17,6 +17,7 @@ struct WindowActions: Equatable {
     var focusSearch: (() -> Void)?
     var setupPosition: (() -> Void)?
     var clearAnnotations: (() -> Void)?
+    var analyzeGame: (() -> Void)?
     var openRecent: ((String) -> Void)?
     var clearRecents: (() -> Void)?
     var recentFiles: [String] = []
@@ -102,6 +103,9 @@ struct StudioCommands: Commands {
             Button("Opening Reference") { actions?.toggleReference?() }
                 .keyboardShortcut("t")
                 .disabled(actions?.toggleReference == nil)
+            Button("Analyze Game…") { actions?.analyzeGame?() }
+                .keyboardShortcut("a", modifiers: [.command, .option])
+                .disabled(actions?.analyzeGame == nil)
         }
     }
 }

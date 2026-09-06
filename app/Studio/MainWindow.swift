@@ -30,6 +30,8 @@ struct MainWindow: View {
     @State private var showImporter = false
     @State private var showSaveSheet = false
     @State private var showSetupSheet = false
+    @State private var showAnalyzeSheet = false
+    @State private var analyzer = GameAnalyzer()
     @State private var searchQuery = ""
     @FocusState private var searchFocused: Bool
     @State private var showFilters = false
@@ -162,6 +164,30 @@ struct MainWindow: View {
                     session.openCommentEditor()
                 }
             }
+            // dev hook: whole-game analysis at the given depth, result PGN
+            // written to DCS_AUTO_ANALYZE_OUT (stdout dies with pkill)
+            if let depthText = ProcessInfo.processInfo.environment["DCS_AUTO_ANALYZE"],
+               let depth = Int(depthText) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    Task {
+                        var settings = AnalysisSettings()
+                        settings.depth = depth
+                        let started = Date()
+                        let n = await analyzer.run(session: session, settings: settings)
+                        let out = ProcessInfo.processInfo.environment["DCS_AUTO_ANALYZE_OUT"]
+                            ?? "/tmp/dcs-analyze.pgn"
+                        let report = """
+                        marks: \(n.map(String.init) ?? "nil")
+                        summary: \(analyzer.summary ?? "-")
+                        error: \(analyzer.errorText ?? "-")
+                        seconds: \(Int(Date().timeIntervalSince(started)))
+
+                        \(session.game.toPgn())
+                        """
+                        try? report.write(toFile: out, atomically: true, encoding: .utf8)
+                    }
+                }
+            }
             // dev hook: open reference mode and step one move (screenshots)
             if ProcessInfo.processInfo.environment["DCS_AUTO_TREE"] != nil {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
@@ -207,6 +233,13 @@ struct MainWindow: View {
                 }
             }
         }
+        .sheet(isPresented: $showAnalyzeSheet) {
+            AnalyzeGameSheet(session: session, analyzer: analyzer) {
+                // two engines on one game is one too many: the live panel
+                // yields to the batch run (⌘E brings it back afterwards)
+                if engine.panelVisible { toggleEngine() }
+            }
+        }
         .navigationTitle(store.sourceName.map { "DC Studio — \($0)" } ?? "DC Studio")
         .focusedSceneValue(\.windowActions, WindowActions(
             openPgn: { showImporter = true },
@@ -221,6 +254,7 @@ struct MainWindow: View {
             focusSearch: { searchFocused = true },
             setupPosition: { showSetupSheet = true },
             clearAnnotations: { session.clearAnnotations() },
+            analyzeGame: { showAnalyzeSheet = true },
             openRecent: { path in
                 guard confirmLeaveGame() else { return }
                 store.openPgn([URL(fileURLWithPath: path)])

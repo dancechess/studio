@@ -400,6 +400,42 @@ final class GameSession {
         rebuildTokens()
     }
 
+    /// Lands a whole-game analysis at once: one snapshot, so ⌘Z removes
+    /// every mark together. Move NAGs ($1–$6) on a marked move are
+    /// replaced; comments are appended to, never overwritten, so a
+    /// coach's prose (and [%cal]/[%csl] tags) survive.
+    func applyAnalysis(_ marks: [AnalysisMark]) {
+        guard !marks.isEmpty else { return }
+        snapshot()
+        for m in marks {
+            if let nag = m.nag {
+                let kept = [UInt8](game.node(id: m.node).nags).filter { !(1...6).contains($0) }
+                game.clearNags(id: m.node)
+                for n in kept { game.addNag(id: m.node, nag: n) }
+                game.addNag(id: m.node, nag: nag)
+            }
+            if let text = m.comment {
+                let old = game.node(id: m.node).comment ?? ""
+                game.setComment(id: m.node, comment: old.isEmpty ? text : old + " " + text)
+            }
+            if !m.bestLine.isEmpty, let parent = game.node(id: m.node).parent {
+                var node = parent
+                var last: UInt32?
+                for san in m.bestLine {
+                    guard let next = try? game.addMove(id: node, san: san) else { break }
+                    node = next
+                    last = next
+                }
+                if let last, let text = m.lineComment,
+                   (game.node(id: last).comment ?? "").isEmpty {
+                    game.setComment(id: last, comment: text)
+                }
+            }
+        }
+        rebuildTokens()
+        select(currentNode)
+    }
+
     func clearNags() {
         guard currentNode != 0 else { return }
         snapshot()
