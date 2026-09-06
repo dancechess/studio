@@ -32,6 +32,12 @@ struct MainWindow: View {
     @State private var showSetupSheet = false
     @State private var searchQuery = ""
     @FocusState private var searchFocused: Bool
+    @State private var showFilters = false
+    @State private var filterResult = ""
+    @State private var filterDateFrom = ""
+    @State private var filterDateTo = ""
+    @State private var filterMinElo = ""
+    @State private var filterMaxElo = ""
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -305,7 +311,6 @@ struct MainWindow: View {
                     searchQuery = ""
                     searchFocused = false
                 }
-                .disabled(store.positionFilter != nil)
             if !searchQuery.isEmpty {
                 Button {
                     searchQuery = ""
@@ -315,17 +320,101 @@ struct MainWindow: View {
                 .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
             }
+            Button {
+                showFilters.toggle()
+            } label: {
+                Image(systemName: headerFilterActive
+                      ? "line.3.horizontal.decrease.circle.fill"
+                      : "line.3.horizontal.decrease.circle")
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(headerFilterActive ? Color.accentColor : .secondary)
+            .help("Filter by result, date and Elo")
+            .popover(isPresented: $showFilters, arrowEdge: .bottom) { filterPopover }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .onChange(of: searchQuery) { store.setSearch(searchQuery) }
     }
 
+    private var headerFilterActive: Bool {
+        store.filter.result != nil || store.filter.dateFrom != nil
+            || store.filter.dateTo != nil || store.filter.minElo != nil
+            || store.filter.maxElo != nil
+    }
+
+    /// Header criteria. Applied on every edit (the list is a live view of
+    /// the filter, like the search field), cleared with one button.
+    private var filterPopover: some View {
+        Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 8) {
+            GridRow {
+                Text("Result").gridColumnAlignment(.trailing)
+                Picker("", selection: $filterResult) {
+                    Text("Any").tag("")
+                    Text("1-0").tag("1-0")
+                    Text("½-½").tag("1/2-1/2")
+                    Text("0-1").tag("0-1")
+                    Text("*").tag("*")
+                }
+                .labelsHidden()
+                .frame(width: 120)
+            }
+            GridRow {
+                Text("Date")
+                HStack(spacing: 4) {
+                    TextField("from YYYY.MM.DD", text: $filterDateFrom).frame(width: 118)
+                    Text("–")
+                    TextField("to", text: $filterDateTo).frame(width: 118)
+                }
+            }
+            GridRow {
+                Text("Elo")
+                HStack(spacing: 4) {
+                    TextField("min", text: $filterMinElo).frame(width: 60)
+                    Text("–")
+                    TextField("max", text: $filterMaxElo).frame(width: 60)
+                    Text("both players").foregroundStyle(.secondary).font(.caption)
+                }
+            }
+            GridRow {
+                Text("")
+                HStack {
+                    Button("Clear") {
+                        filterResult = ""; filterDateFrom = ""; filterDateTo = ""
+                        filterMinElo = ""; filterMaxElo = ""
+                    }
+                    .disabled(!headerFilterActive)
+                    Spacer()
+                    Text("\(store.displayCount) of \(store.gameCount)")
+                        .foregroundStyle(.secondary).font(.caption)
+                }
+            }
+        }
+        .textFieldStyle(.roundedBorder)
+        .font(.system(size: 12))
+        .padding(12)
+        .frame(width: 330)
+        .onChange(of: filterResult) { applyHeaderFilter() }
+        .onChange(of: filterDateFrom) { applyHeaderFilter() }
+        .onChange(of: filterDateTo) { applyHeaderFilter() }
+        .onChange(of: filterMinElo) { applyHeaderFilter() }
+        .onChange(of: filterMaxElo) { applyHeaderFilter() }
+    }
+
+    private func applyHeaderFilter() {
+        store.setHeaderFilter(result: filterResult, dateFrom: filterDateFrom,
+                              dateTo: filterDateTo,
+                              minElo: UInt32(filterMinElo.trimmingCharacters(in: .whitespaces)),
+                              maxElo: UInt32(filterMaxElo.trimmingCharacters(in: .whitespaces)))
+    }
+
     private var statusBar: some View {
         HStack(spacing: 12) {
             Text(store.positionFilter != nil
                  ? "\(store.matchedCount) of \(store.gameCount) games reach this position"
-                 : "\(store.gameCount) games")
+                 : store.isFiltered
+                     ? "\(store.displayCount) of \(store.gameCount) games match"
+                     : "\(store.gameCount) games")
                 .foregroundStyle(.secondary)
             if store.importing {
                 ProgressView().controlSize(.small)

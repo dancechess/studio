@@ -34,15 +34,27 @@ final class DatabaseStore {
     private(set) var sort: GameSort = .number
     private(set) var ascending = true
 
-    /// When set (reference mode), the list shows only games reaching this
-    /// position; nil = the whole list.
-    private(set) var positionFilter: String?
-    private(set) var matchedCount: UInt64 = 0
-    /// What the table actually shows (position filter beats text search).
-    var displayCount: UInt64 {
-        if positionFilter != nil { return matchedCount }
-        if searchText != nil { return searchCount }
-        return gameCount
+    /// Everything the list is narrowed by — text, result, dates, Elo, and
+    /// the reference-mode position — combined with AND in one SQL query.
+    /// A default filter is the whole list.
+    private(set) var filter = GameFilter(text: nil, result: nil, dateFrom: nil,
+                                         dateTo: nil, minElo: nil, maxElo: nil, fen: nil)
+    /// Row count under `filter` (== gameCount when the filter is empty).
+    private(set) var filteredCount: UInt64 = 0
+    var isFiltered: Bool {
+        filter.text != nil || filter.result != nil || filter.dateFrom != nil
+            || filter.dateTo != nil || filter.minElo != nil || filter.maxElo != nil
+            || filter.fen != nil
+    }
+    /// Reference mode's position, when active.
+    var positionFilter: String? { filter.fen }
+    var matchedCount: UInt64 { filteredCount }
+    /// What the table actually shows.
+    var displayCount: UInt64 { isFiltered ? filteredCount : gameCount }
+
+    private func recount() {
+        guard let db else { filteredCount = 0; return }
+        filteredCount = isFiltered ? ((try? db.countGames(filter: filter)) ?? 0) : gameCount
     }
 
     /// Source PGN files behind the current list.
@@ -123,38 +135,44 @@ final class DatabaseStore {
     func page(offset: UInt64, limit: UInt32) -> [GameSummary] {
         guard let db else { return [] }
         do {
-            if let fen = positionFilter {
-                return try db.gamesAtPosition(fen: fen, offset: offset, limit: limit,
-                                              sort: sort, ascending: ascending)
-            }
-            if let text = searchText {
-                return try db.searchGames(text: text, offset: offset, limit: limit,
-                                          sort: sort, ascending: ascending)
-            }
-            return try db.listGames(offset: offset, limit: limit,
-                                    sort: sort, ascending: ascending)
+            return try db.queryGames(filter: filter, offset: offset, limit: limit,
+                                     sort: sort, ascending: ascending)
         } catch {
             errorText = "Failed to load game list: \(error.localizedDescription)"
             return []
         }
     }
 
-    /// Text search over White/Black/Event (nil clears). Ignored while the
-    /// reference-mode position filter is active.
-    private(set) var searchText: String?
-    private(set) var searchCount: UInt64 = 0
+    /// Text search over White/Black/Event (nil or blank clears).
+    var searchText: String? { filter.text }
 
     func setSearch(_ text: String?) {
         let trimmed = text?.trimmingCharacters(in: .whitespaces)
         let value = (trimmed?.isEmpty ?? true) ? nil : trimmed
-        guard value != searchText else { return }
-        searchText = value
-        if let value, let db {
-            searchCount = (try? db.searchGamesCount(text: value)) ?? 0
-        } else {
-            searchCount = 0
-        }
+        guard value != filter.text else { return }
+        filter.text = value
+        recount()
         revision += 1
+    }
+
+    /// Header criteria from the filter popover. Blank strings and nil both
+    /// mean "no bound"; Elo bounds apply to both players.
+    func setHeaderFilter(result: String?, dateFrom: String?, dateTo: String?,
+                         minElo: UInt32?, maxElo: UInt32?) {
+        let clean = { (v: String?) -> String? in
+            let t = v?.trimmingCharacters(in: .whitespaces)
+            return (t?.isEmpty ?? true) ? nil : t
+        }
+        let next = (clean(result), clean(dateFrom), clean(dateTo), minElo, maxElo)
+        let cur = (filter.result, filter.dateFrom, filter.dateTo, filter.minElo, filter.maxElo)
+        guard next != cur else { return }
+        (filter.result, filter.dateFrom, filter.dateTo, filter.minElo, filter.maxElo) = next
+        recount()
+        revision += 1
+    }
+
+    func clearHeaderFilter() {
+        setHeaderFilter(result: nil, dateFrom: nil, dateTo: nil, minElo: nil, maxElo: nil)
     }
 
     /// Deletes one game from the cache and the source PGN.
@@ -164,12 +182,7 @@ final class DatabaseStore {
             try db.deleteGame(id: id)
             try writeBack()
             gameCount = (try? db.gameCount()) ?? 0
-            if let fen = positionFilter {
-                matchedCount = (try? db.gamesAtPositionCount(fen: fen)) ?? 0
-            }
-            if let text = searchText {
-                searchCount = (try? db.searchGamesCount(text: text)) ?? 0
-            }
+            recount()
             revision += 1
         } catch {
             errorText = "Delete failed: \(error.localizedDescription)"
@@ -178,13 +191,9 @@ final class DatabaseStore {
 
     /// Reference mode: filter the list to games reaching `fen` (nil clears).
     func setPositionFilter(_ fen: String?) {
-        guard fen != positionFilter else { return }
-        positionFilter = fen
-        if let fen, let db {
-            matchedCount = (try? db.gamesAtPositionCount(fen: fen)) ?? 0
-        } else {
-            matchedCount = 0
-        }
+        guard fen != filter.fen else { return }
+        filter.fen = fen
+        recount()
         revision += 1
     }
 
@@ -211,6 +220,7 @@ final class DatabaseStore {
         guard let db else { throw ChessError.Database(reason: "no database") }
         try db.updateGame(id: id, pgn: pgn)
         try writeBack()
+        recount()
         revision += 1
     }
 
@@ -222,6 +232,7 @@ final class DatabaseStore {
         let id = try db.addGame(pgn: pgn)
         try writeBack()
         gameCount = (try? db.gameCount()) ?? gameCount
+        recount()
         revision += 1
         return id
     }
@@ -317,10 +328,9 @@ final class DatabaseStore {
         sourceName = name
         sourceURLs = urls
         self.cacheURL = cacheURL
-        positionFilter = nil
-        matchedCount = 0
-        searchText = nil
-        searchCount = 0
+        filter = GameFilter(text: nil, result: nil, dateFrom: nil, dateTo: nil,
+                            minElo: nil, maxElo: nil, fen: nil)
+        filteredCount = gameCount
         generation += 1
         revision += 1
         UserDefaults.standard.set(cacheURL.path, forKey: Self.lastCachePathKey)

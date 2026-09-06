@@ -62,6 +62,32 @@ pub enum GameSort {
     Event,
     Eco,
     WhiteElo,
+    BlackElo,
+    /// "1-0" < "1/2-1/2" < "0-1" < "*" — decisive games first, unknowns last.
+    Result,
+}
+
+/// What the game list is narrowed to. Every field is optional and they
+/// combine with AND; a default filter matches the whole list. One record
+/// rather than one function per criterion, so adding a criterion is a
+/// field here and a clause in `where_clause`, not a new FFI entry point.
+#[derive(uniffi::Record, Default, Clone)]
+pub struct GameFilter {
+    /// Case-insensitive substring over White / Black / Event.
+    pub text: Option<String>,
+    /// Exactly one of "1-0", "0-1", "1/2-1/2", "*".
+    pub result: Option<String>,
+    /// PGN date text ("2024.03.01"). Lexical, which is chronological for
+    /// this format; a partial "2024" works as a lower bound.
+    pub date_from: Option<String>,
+    pub date_to: Option<String>,
+    /// Both players' Elo within [min, max]; a game missing either rating
+    /// does not match a bound that is set.
+    pub min_elo: Option<u32>,
+    pub max_elo: Option<u32>,
+    /// Reference mode: only games reaching this position (transposition-
+    /// aware, first 60 plies of the main line).
+    pub fen: Option<String>,
 }
 
 #[derive(uniffi::Object)]
@@ -81,6 +107,77 @@ fn like_pattern(text: &str) -> String {
         .replace('%', "\\%")
         .replace('_', "\\_");
     format!("%{escaped}%")
+}
+
+fn order_by(sort: GameSort) -> &'static str {
+    match sort {
+        GameSort::Number => "id",
+        GameSort::Round => "cast(round as real), round",
+        GameSort::Date => "date",
+        GameSort::White => "white",
+        GameSort::Black => "black",
+        GameSort::Event => "event",
+        GameSort::Eco => "eco",
+        GameSort::WhiteElo => "white_elo",
+        GameSort::BlackElo => "black_elo",
+        GameSort::Result => "CASE result WHEN '1-0' THEN 0 WHEN '1/2-1/2' THEN 1 \
+                            WHEN '0-1' THEN 2 ELSE 3 END",
+    }
+}
+
+/// `WHERE …` for a filter, plus its bound values in order. Empty filter →
+/// empty clause (no `WHERE` at all).
+fn where_clause(f: &GameFilter) -> Result<(String, Vec<rusqlite::types::Value>), ChessError> {
+    use rusqlite::types::Value;
+    let mut clauses: Vec<String> = Vec::new();
+    let mut values: Vec<Value> = Vec::new();
+    let mut bind = |v: Value| -> String {
+        values.push(v);
+        format!("?{}", values.len())
+    };
+    if let Some(text) = f.text.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+        let p = bind(Value::Text(like_pattern(text)));
+        clauses.push(format!(
+            "(white LIKE {p} ESCAPE '\\' OR black LIKE {p} ESCAPE '\\' OR event LIKE {p} ESCAPE '\\')"
+        ));
+    }
+    if let Some(result) = f.result.as_deref().filter(|r| !r.is_empty()) {
+        let p = bind(Value::Text(result.into()));
+        clauses.push(format!("result = {p}"));
+    }
+    if let Some(from) = f.date_from.as_deref().filter(|d| !d.is_empty()) {
+        let p = bind(Value::Text(from.into()));
+        // '?' sorts after every digit, so an unknown date ("????.??.??")
+        // would satisfy any lower bound; a date bound means a known date
+        clauses.push(format!("date GLOB '[0-9]*' AND date >= {p}"));
+    }
+    if let Some(to) = f.date_to.as_deref().filter(|d| !d.is_empty()) {
+        // "2024" as an upper bound should include all of 2024: pad so the
+        // comparison happens against the last possible date of that prefix
+        let padded = format!("{to}{}", &"~~~~~~~~~~"[..10usize.saturating_sub(to.len())]);
+        let p = bind(Value::Text(padded));
+        clauses.push(format!("date GLOB '[0-9]*' AND date <= {p}"));
+    }
+    if let Some(min) = f.min_elo {
+        let p = bind(Value::Integer(min as i64));
+        clauses.push(format!("white_elo >= {p} AND black_elo >= {p}"));
+    }
+    if let Some(max) = f.max_elo {
+        let p = bind(Value::Integer(max as i64));
+        clauses.push(format!("white_elo <= {p} AND black_elo <= {p}"));
+    }
+    if let Some(fen) = f.fen.as_deref().filter(|x| !x.is_empty()) {
+        let z = zobrist_of_fen(fen)?;
+        let p = bind(Value::Integer(z));
+        clauses.push(format!(
+            "id IN (SELECT DISTINCT game_id FROM positions WHERE zobrist = {p})"
+        ));
+    }
+    if clauses.is_empty() {
+        Ok((String::new(), values))
+    } else {
+        Ok((format!("WHERE {}", clauses.join(" AND ")), values))
+    }
 }
 
 const SUMMARY_COLS: &str =
@@ -196,16 +293,7 @@ impl Database {
         sort: GameSort,
         ascending: bool,
     ) -> Result<Vec<GameSummary>, ChessError> {
-        let order = match sort {
-            GameSort::Number => "id",
-            GameSort::Round => "cast(round as real), round",
-            GameSort::Date => "date",
-            GameSort::White => "white",
-            GameSort::Black => "black",
-            GameSort::Event => "event",
-            GameSort::Eco => "eco",
-            GameSort::WhiteElo => "white_elo",
-        };
+        let order = order_by(sort);
         let dir = if ascending { "ASC" } else { "DESC" };
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
@@ -231,16 +319,7 @@ impl Database {
         ascending: bool,
     ) -> Result<Vec<GameSummary>, ChessError> {
         let zobrist = zobrist_of_fen(&fen)?;
-        let order = match sort {
-            GameSort::Number => "id",
-            GameSort::Round => "cast(round as real), round",
-            GameSort::Date => "date",
-            GameSort::White => "white",
-            GameSort::Black => "black",
-            GameSort::Event => "event",
-            GameSort::Eco => "eco",
-            GameSort::WhiteElo => "white_elo",
-        };
+        let order = order_by(sort);
         let dir = if ascending { "ASC" } else { "DESC" };
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
@@ -281,16 +360,7 @@ impl Database {
         sort: GameSort,
         ascending: bool,
     ) -> Result<Vec<GameSummary>, ChessError> {
-        let order = match sort {
-            GameSort::Number => "id",
-            GameSort::Round => "cast(round as real), round",
-            GameSort::Date => "date",
-            GameSort::White => "white",
-            GameSort::Black => "black",
-            GameSort::Event => "event",
-            GameSort::Eco => "eco",
-            GameSort::WhiteElo => "white_elo",
-        };
+        let order = order_by(sort);
         let dir = if ascending { "ASC" } else { "DESC" };
         let pattern = like_pattern(&text);
         let conn = self.conn.lock().unwrap();
@@ -316,6 +386,50 @@ impl Database {
              WHERE white LIKE ?1 ESCAPE '\\' OR black LIKE ?1 ESCAPE '\\'
                 OR event LIKE ?1 ESCAPE '\\'",
             [pattern],
+            |r| r.get::<_, i64>(0),
+        )
+        .map(|n| n as u64)
+        .map_err(db_err)
+    }
+
+    /// One page of the list under a filter — the general form of
+    /// `list_games` / `search_games` / `games_at_position`, which are what
+    /// the UI used before criteria could combine.
+    pub fn query_games(
+        &self,
+        filter: GameFilter,
+        offset: u64,
+        limit: u32,
+        sort: GameSort,
+        ascending: bool,
+    ) -> Result<Vec<GameSummary>, ChessError> {
+        let (where_sql, mut values) = where_clause(&filter)?;
+        let order = order_by(sort);
+        let dir = if ascending { "ASC" } else { "DESC" };
+        let n = values.len();
+        values.push(rusqlite::types::Value::Integer(limit as i64));
+        values.push(rusqlite::types::Value::Integer(offset as i64));
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT {SUMMARY_COLS} FROM games {where_sql}
+                 ORDER BY {order} {dir}, id LIMIT ?{} OFFSET ?{}",
+                n + 1,
+                n + 2
+            ))
+            .map_err(db_err)?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(values), summary_from_row)
+            .map_err(db_err)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(db_err)
+    }
+
+    pub fn count_games(&self, filter: GameFilter) -> Result<u64, ChessError> {
+        let (where_sql, values) = where_clause(&filter)?;
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            &format!("SELECT count(*) FROM games {where_sql}"),
+            rusqlite::params_from_iter(values),
             |r| r.get::<_, i64>(0),
         )
         .map(|n| n as u64)
@@ -795,6 +909,89 @@ mod tests {
             .unwrap();
         assert!(stats.imported >= 1);
         assert_eq!(stats.skipped, 0);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn filters_combine_and_sort_by_result_and_black_elo() {
+        let (db, path) = temp_db();
+        import_str(
+            &db,
+            r#"[Event "Spring Open"]
+[Site "?"]
+[Date "2024.03.01"]
+[Round "1"]
+[White "Kid"]
+[Black "Strong"]
+[Result "0-1"]
+[WhiteElo "1500"]
+[BlackElo "2200"]
+
+1. e4 e5 0-1
+
+[Event "Spring Open"]
+[Site "?"]
+[Date "2024.03.02"]
+[Round "2"]
+[White "Strong"]
+[Black "Kid"]
+[Result "1/2-1/2"]
+[WhiteElo "2200"]
+[BlackElo "1500"]
+
+1. d4 d5 1/2-1/2
+
+[Event "Autumn Open"]
+[Site "?"]
+[Date "2024.10.05"]
+[Round "1"]
+[White "Kid"]
+[Black "Other"]
+[Result "1-0"]
+[WhiteElo "1600"]
+
+1. e4 c5 1-0
+
+[Event "Unknown"]
+[Site "?"]
+[Date "????.??.??"]
+[Round "?"]
+[White "A"]
+[Black "B"]
+[Result "*"]
+
+1. c4 *
+"#,
+        );
+        let f = |x: GameFilter| db.count_games(x).unwrap();
+        assert_eq!(f(GameFilter::default()), 4, "empty filter = whole list");
+        // "the student's losses": name + result combine with AND
+        assert_eq!(f(GameFilter { text: Some("kid".into()), result: Some("0-1".into()), ..Default::default() }), 1);
+        assert_eq!(f(GameFilter { text: Some("kid".into()), ..Default::default() }), 3);
+        // a date range; "2024" alone as an upper bound still includes October
+        assert_eq!(f(GameFilter { date_from: Some("2024.03.02".into()), ..Default::default() }), 2);
+        assert_eq!(f(GameFilter { date_from: Some("2024.03.01".into()), date_to: Some("2024.03.31".into()), ..Default::default() }), 2);
+        assert_eq!(f(GameFilter { date_to: Some("2024".into()), ..Default::default() }), 3);
+        // elo bounds apply to both players; a missing rating fails a set bound
+        assert_eq!(f(GameFilter { min_elo: Some(1500), ..Default::default() }), 2);
+        assert_eq!(f(GameFilter { max_elo: Some(1600), ..Default::default() }), 0);
+        // position + text combine
+        assert_eq!(f(GameFilter { fen: Some(START_FEN.into()), text: Some("kid".into()), ..Default::default() }), 3);
+        // `%` and `_` in the text are literal, not wildcards
+        assert_eq!(f(GameFilter { text: Some("%".into()), ..Default::default() }), 0);
+
+        // result sort: decisive first, unknown last (ascending)
+        let by_result = db.query_games(GameFilter::default(), 0, 10, GameSort::Result, true).unwrap();
+        assert_eq!(by_result.iter().map(|g| g.result.as_str()).collect::<Vec<_>>(), ["1-0", "1/2-1/2", "0-1", "*"]);
+        // black elo sort descending: 2200, 1500, then the two without
+        let by_black = db.query_games(GameFilter::default(), 0, 10, GameSort::BlackElo, false).unwrap();
+        assert_eq!(by_black[0].black_elo, Some(2200));
+        assert_eq!(by_black[1].black_elo, Some(1500));
+        // paging under a filter
+        let page = db.query_games(GameFilter { text: Some("kid".into()), ..Default::default() }, 1, 1, GameSort::Number, true).unwrap();
+        assert_eq!(page.len(), 1);
+        assert_eq!(page[0].black, "Kid");
+
         let _ = std::fs::remove_file(path);
     }
 }

@@ -121,8 +121,8 @@ struct GameListView: NSViewRepresentable {
             ColumnSpec(id: "white", title: "White", width: 150, sortKey: "white"),
             ColumnSpec(id: "whiteElo", title: "Elo", width: 46, sortKey: "whiteElo"),
             ColumnSpec(id: "black", title: "Black", width: 150, sortKey: "black"),
-            ColumnSpec(id: "blackElo", title: "Elo", width: 46, sortKey: nil),
-            ColumnSpec(id: "result", title: "Result", width: 52, sortKey: nil),
+            ColumnSpec(id: "blackElo", title: "Elo", width: 46, sortKey: "blackElo"),
+            ColumnSpec(id: "result", title: "Result", width: 52, sortKey: "result"),
             ColumnSpec(id: "round", title: "Round", width: 48, sortKey: "round"),
             ColumnSpec(id: "moves", title: "Moves", width: 44, sortKey: nil),
             ColumnSpec(id: "eco", title: "ECO", width: 46, sortKey: "eco"),
@@ -337,6 +337,8 @@ struct GameListView: NSViewRepresentable {
             case "event": .event
             case "eco": .eco
             case "whiteElo": .whiteElo
+            case "blackElo": .blackElo
+            case "result": .result
             default: nil
             }
             if let sort { view.store.setSort(sort, ascending: descriptor.ascending) }
