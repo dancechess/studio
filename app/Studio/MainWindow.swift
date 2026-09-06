@@ -191,6 +191,11 @@ struct MainWindow: View {
                     Task {
                         var settings = AnalysisSettings()
                         settings.depth = depth
+                        let env = ProcessInfo.processInfo.environment
+                        if let side = env["DCS_AUTO_ANALYZE_SIDE"].flatMap(AnalysisSide.init(rawValue:)) {
+                            settings.side = side
+                        }
+                        settings.variations = env["DCS_AUTO_ANALYZE_VARS"] != nil
                         let started = Date()
                         let n = await analyzer.run(session: session, settings: settings)
                         let out = ProcessInfo.processInfo.environment["DCS_AUTO_ANALYZE_OUT"]
@@ -217,7 +222,14 @@ struct MainWindow: View {
                     tree.toggle(fen: session.fen)
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                    session.forward()
+                    if let sans = ProcessInfo.processInfo.environment["DCS_AUTO_TREE_PLAY"] {
+                        session.toStart()    // e.g. "e4 e5 Ke2": a novelty at move 2
+                        for san in sans.split(separator: " ") { session.play(san: String(san)) }
+                    } else if ProcessInfo.processInfo.environment["DCS_AUTO_TREE_END"] != nil {
+                        session.toEnd()      // a late move: never in any book
+                    } else {
+                        session.forward()
+                    }
                 }
             }
             // clicks steer the two-state focus: list zone → browse, game
@@ -539,7 +551,7 @@ struct MainWindow: View {
         if engine.panelVisible { // the two share the panel
             engine.togglePanel(target: session.highlightedFen)
         }
-        tree.toggle(fen: session.fen)
+        tree.toggle(fen: session.fen, parentFen: session.parentFen, san: session.currentSan)
     }
 
     /// "+": a blank board right here — no extra window. The list selection

@@ -33,6 +33,17 @@ struct AnalyzeGameSheet: View {
                     cp($settings.blunder)
                 }
                 GridRow {
+                    Text("Mark")
+                    Picker("", selection: $settings.side) {
+                        ForEach(AnalysisSide.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 180)
+                }
+                GridRow {
+                    Text("Lines")
+                    Toggle("Include variations", isOn: $settings.variations)
+                }
+                GridRow {
                     Text("Line")
                     Stepper(value: $settings.lineLength, in: 1...12) {
                         Text("\(settings.lineLength) plies").frame(width: 60, alignment: .leading)
@@ -40,7 +51,7 @@ struct AnalyzeGameSheet: View {
                 }
             }
             .disabled(analyzer.running)
-            Text("Main line only. Marks, evals and engine lines land in one undo step; existing comments are kept.")
+            Text("Marks, evals and engine lines land in one undo step; existing comments are kept.")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 

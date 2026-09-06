@@ -38,6 +38,9 @@ A renderer that breaks these rules produces subtly wrong output, so they are
 stated as rules rather than left to taste:
 
 - Put one space between tokens; none after `(` or before `)`.
+- A `Move` token's text is SAN with letters (`Nf3`, `e8=Q`, `--` for a null
+  move). Rendering it as a figurine (`♘f3`) is the renderer's choice, made
+  per view (Game ▸ Figurine Notation); the stream never carries glyphs.
 - `ParagraphBreak` starts a new paragraph whose `headIndent` is
   `depth × indentStep`.
 - Main line flows as running text. **First-level variations each get their own

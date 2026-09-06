@@ -32,7 +32,7 @@ more naturally expressed in Swift, so `UCIKit` owns it.
 | `notation.rs` | `notation_tokens()` — flattens the tree into the token stream the notation panel renders, including a `Diagram` token for NAG `$220`. The contract is in [NOTATION-VIEW.md](NOTATION-VIEW.md). |
 | `db.rs` | The `Database` object: streaming PGN import, paged and sorted game lists, one `GameFilter` (text, result, date range, Elo range, position) behind `query_games`/`count_games`, opening-tree aggregation, write-back to `.pgn`. |
 
-`cargo test` covers all of it (33 tests), including PGN round-trip fidelity —
+`cargo test` covers all of it (35 tests), including PGN round-trip fidelity —
 the property everything else leans on.
 
 ## The FFI contract
@@ -64,6 +64,11 @@ positions enter the tree.
 the SAN it stores (check and mate suffixes are filled in). Playing a move that
 already exists under a node returns the existing node rather than duplicating
 it; anything else is appended as a variation.
+
+Null moves (`--`, also read as `Z0`) are ordinary nodes; replaying one swaps
+the side to move, which shakmaty refuses only when that side is in check —
+the one case a pass is illegal. The opening-tree index stops at a null move,
+since a pass is not a move anybody chose.
 
 `fen_at(id)` replays the path from the root instead of caching positions.
 Replaying a few hundred plies is far below perceptible, and the absence of a

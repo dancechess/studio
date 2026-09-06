@@ -14,6 +14,7 @@ struct GameArea: View {
     let engine: EngineSession
     /// Reference mode (main window only; nil in the standalone window).
     var tree: OpeningTreeModel? = nil
+    @State private var settings = AppSettings.shared
 
     private var bottomPanelVisible: Bool {
         engine.panelVisible || (tree?.visible ?? false)
@@ -46,7 +47,7 @@ struct GameArea: View {
                 Divider()
                 if bottomPanelVisible {
                     VSplitView {
-                        NotationView(session: session)
+                        NotationView(session: session, figurines: settings.figurines)
                             .frame(minHeight: 120)
                         if engine.panelVisible {
                             EnginePanel(engine: engine, session: session)
@@ -57,7 +58,7 @@ struct GameArea: View {
                         }
                     }
                 } else {
-                    NotationView(session: session)
+                    NotationView(session: session, figurines: settings.figurines)
                 }
             }
             .frame(minWidth: 280)
@@ -69,7 +70,8 @@ struct GameArea: View {
         }
         .onChange(of: session.fen) {
             engine.updatePosition(fen: session.highlightedFen)
-            tree?.update(fen: session.fen) // root included: first-move stats
+            tree?.update(fen: session.fen, parentFen: session.parentFen,
+                         san: session.currentSan) // root included: first-move stats
         }
     }
 }

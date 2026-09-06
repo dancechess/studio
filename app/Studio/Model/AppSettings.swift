@@ -54,6 +54,7 @@ final class AppSettings {
     private static let speedsKey = "lichessSpeeds"
     private static let sourceKey = "referenceSource"
     private static let tokenAccount = "lichess-token"
+    private static let figurinesKey = "figurineNotation"
     /// Where to make one: a read-only token is enough.
     static let tokenURL = URL(string: "https://lichess.org/account/oauth/token/create?description=DC+Studio+opening+explorer")!
 
@@ -78,6 +79,11 @@ final class AppSettings {
     var referenceSource: ReferenceSource {
         didSet { UserDefaults.standard.set(referenceSource.rawValue, forKey: Self.sourceKey) }
     }
+    /// ♘f3 rather than Nf3 in the notation panel and on paper. On by
+    /// default, as in ChessBase; the PGN itself always keeps letters.
+    var figurines: Bool {
+        didSet { UserDefaults.standard.set(figurines, forKey: Self.figurinesKey) }
+    }
     /// Keychain-backed; nil when unset.
     private(set) var lichessToken: String?
 
@@ -93,6 +99,7 @@ final class AppSettings {
         lichessRatings = d.string(forKey: Self.ratingsKey) ?? "1600,1800,2000,2200,2500"
         lichessSpeeds = d.string(forKey: Self.speedsKey) ?? "blitz,rapid,classical"
         referenceSource = ReferenceSource(rawValue: d.string(forKey: Self.sourceKey) ?? "") ?? .database
+        figurines = d.object(forKey: Self.figurinesKey) as? Bool ?? true
         lichessToken = KeychainStore.get(Self.tokenAccount)
         // dev hook: a token for a smoke run, without touching the Keychain
         if let env = ProcessInfo.processInfo.environment["DCS_LICHESS_TOKEN"], !env.isEmpty {

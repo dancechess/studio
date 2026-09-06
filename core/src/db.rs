@@ -668,6 +668,10 @@ fn index_positions(
         .prepare_cached("INSERT INTO positions (zobrist, game_id, move, result) VALUES (?1, ?2, ?3, ?4)")
         .map_err(db_err)?;
     for san in game.mainline_sans().iter().take(TREE_MAX_PLY) {
+        // a pass is not an opening move anybody chose; statistics stop here
+        if crate::game::is_null_san(san) {
+            break;
+        }
         let parsed: San = match san.parse() {
             Ok(s) => s,
             Err(_) => break,

@@ -442,6 +442,10 @@ final class GameSession {
         currentNode != 0 && [UInt8](game.node(id: currentNode).nags).contains(220)
     }
 
+    var hasNoveltyMark: Bool {
+        currentNode != 0 && [UInt8](game.node(id: currentNode).nags).contains(146)
+    }
+
     func toggleDiagram() {
         guard currentNode != 0 else { return }
         applyNag(220) // same NAG again removes it
@@ -539,6 +543,17 @@ final class GameSession {
     }
 
     func cancelComment() { commentDraft = nil }
+
+    /// The position the current move was played from (nil at the root):
+    /// what the reference panel needs to say whether the move is a novelty.
+    var parentFen: String? {
+        guard currentNode != 0, let parent = game.node(id: currentNode).parent else { return nil }
+        return try? game.fenAt(id: parent)
+    }
+
+    var currentSan: String? {
+        currentNode == 0 ? nil : game.node(id: currentNode).san
+    }
 
     /// "12.Nf3" / "12...c5" — label of the current move for UI titles.
     var currentMoveLabel: String {

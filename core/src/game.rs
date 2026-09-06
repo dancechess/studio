@@ -86,17 +86,7 @@ impl GameInner {
     fn position_at(&self, id: u32) -> Result<Chess, ChessError> {
         let mut pos = self.root_position()?;
         for i in self.path_to(id) {
-            let san: San =
-                self.nodes[i as usize]
-                    .san
-                    .parse()
-                    .map_err(|e| ChessError::InvalidMove {
-                        reason: format!("{e}"),
-                    })?;
-            let m = san.to_move(&pos).map_err(|e| ChessError::InvalidMove {
-                reason: format!("bad move '{}' in game: {e}", self.nodes[i as usize].san),
-            })?;
-            pos.play_unchecked(&m);
+            pos = play_san(pos, &self.nodes[i as usize].san)?;
         }
         Ok(pos)
     }
@@ -107,13 +97,18 @@ impl GameInner {
     /// "created".
     pub(crate) fn add_child(&mut self, id: u32, san: &str) -> Result<(u32, bool), ChessError> {
         let pos = self.position_at(id)?;
-        let parsed: San = san.parse().map_err(|e| ChessError::InvalidMove {
-            reason: format!("{e}"),
-        })?;
-        let m = parsed.to_move(&pos).map_err(|e| ChessError::InvalidMove {
-            reason: format!("{e}"),
-        })?;
-        let san = shakmaty::san::SanPlus::from_move(pos, &m).to_string();
+        let san = if is_null_san(san) {
+            play_san(pos, san)?; // legal only when not in check
+            "--".to_string()
+        } else {
+            let parsed: San = san.parse().map_err(|e| ChessError::InvalidMove {
+                reason: format!("{e}"),
+            })?;
+            let m = parsed.to_move(&pos).map_err(|e| ChessError::InvalidMove {
+                reason: format!("{e}"),
+            })?;
+            shakmaty::san::SanPlus::from_move(pos, &m).to_string()
+        };
         if let Some(&existing) = self.nodes[id as usize]
             .children
             .iter()
@@ -530,6 +525,32 @@ impl Game {
     }
 }
 
+/// "--" and "Z0" both mean a null move (pass) in the PGN dialects that
+/// carry one; "--" is what this writes.
+pub(crate) fn is_null_san(san: &str) -> bool {
+    san == "--" || san == "Z0"
+}
+
+/// Plays one SAN on `pos`, null moves included (shakmaty has no null
+/// `Move`; a pass is the position with the turn swapped, which it refuses
+/// when the side to move is in check — the one case a pass is illegal).
+pub(crate) fn play_san(pos: Chess, san: &str) -> Result<Chess, ChessError> {
+    if is_null_san(san) {
+        return pos.swap_turn().map_err(|_| ChessError::InvalidMove {
+            reason: "null move while in check".into(),
+        });
+    }
+    let parsed: San = san.parse().map_err(|e| ChessError::InvalidMove {
+        reason: format!("{e}"),
+    })?;
+    let m = parsed.to_move(&pos).map_err(|e| ChessError::InvalidMove {
+        reason: format!("bad move '{san}' in game: {e}"),
+    })?;
+    let mut next = pos;
+    next.play_unchecked(&m);
+    Ok(next)
+}
+
 /// The four fields that define a position (move counters differ between
 /// two routes to the same position and must not make two games "different").
 fn normalized_fen(fen: &str) -> String {
@@ -765,5 +786,21 @@ mod tests {
         let other = "[SetUp \"1\"]\n[FEN \"8/8/8/8/8/8/8/K6k w - - 0 1\"]\n\n1. Kb1 *";
         assert!(a.merge_pgn(other.into()).is_err());
         assert_eq!(a.mainline().len(), 2);
+    }
+
+    #[test]
+    fn null_moves_parse_replay_and_round_trip() {
+        // analysis PGNs from other tools carry "--" (or Z0) for "pass";
+        // the tree must hold it, replay past it, and write it back
+        let g = Game::from_pgn("1. e4 -- 2. d4 d5 *".into()).unwrap();
+        let ids = g.mainline();
+        assert_eq!(ids.len(), 4);
+        let fen = g.fen_at(*ids.last().unwrap()).unwrap();
+        assert!(fen.starts_with("rnbqkbnr/ppp1pppp/8/3p4/3PP3/8/PPP2PPP/RNBQKBNR w"), "{fen}");
+        assert!(g.to_pgn().contains("1. e4 -- 2. d4 d5"), "{}", g.to_pgn());
+        // and it can be entered by hand
+        let n = g.add_move(*ids.last().unwrap(), "--".into()).unwrap();
+        assert_eq!(g.node(n).san, "--");
+        assert!(g.fen_at(n).unwrap().contains(" b "));
     }
 }

@@ -15,6 +15,8 @@ extension NSAttributedString.Key {
 
 struct NotationView: NSViewRepresentable {
     let session: GameSession
+    /// Read in the parent's body so a toggle re-renders (see GameArea).
+    var figurines: Bool = AppSettings.shared.figurines
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -45,10 +47,11 @@ struct NotationView: NSViewRepresentable {
         guard let textView = scroll.documentView as? NotationTextView else { return }
         let coordinator = context.coordinator
         coordinator.session = session
-        if coordinator.version != session.tokensVersion {
+        if coordinator.version != session.tokensVersion || coordinator.figurines != figurines {
             coordinator.version = session.tokensVersion
+            coordinator.figurines = figurines
             let game = session.game
-            let (text, ranges) = Self.buildAttributed(session.tokens,
+            let (text, ranges) = Self.buildAttributed(session.tokens, figurines: figurines,
                                                       fenAt: { try? game.fenAt(id: $0) })
             coordinator.nodeRanges = ranges
             coordinator.highlighted = nil
@@ -60,6 +63,7 @@ struct NotationView: NSViewRepresentable {
     @MainActor
     final class Coordinator: NSObject {
         var version = -1
+        var figurines = true
         var nodeRanges: [UInt32: NSRange] = [:]
         var highlighted: NSRange?
         weak var session: GameSession?
@@ -166,7 +170,22 @@ struct NotationView: NSViewRepresentable {
     /// Diagram size in the panel and on paper.
     static let diagramSize: CGFloat = 168
 
-    static func buildAttributed(_ tokens: [NotationToken],
+    /// Nf3 → ♘f3, e8=Q → e8=♕. The same glyph for both colours, as printed
+    /// chess books do; the PGN keeps the letter.
+    static func figurine(_ san: String) -> String {
+        let glyphs: [Character: Character] = ["K": "♔", "Q": "♕", "R": "♖", "B": "♗", "N": "♘"]
+        var out = san
+        if let first = out.first, let g = glyphs[first] {
+            out.replaceSubrange(out.startIndex...out.startIndex, with: String(g))
+        }
+        if let eq = out.firstIndex(of: "="), let after = out.index(eq, offsetBy: 1, limitedBy: out.endIndex),
+           after < out.endIndex, let g = glyphs[out[after]] {
+            out.replaceSubrange(after...after, with: String(g))
+        }
+        return out
+    }
+
+    static func buildAttributed(_ tokens: [NotationToken], figurines: Bool = true,
                                 fenAt: (UInt32) -> String?) -> (NSAttributedString, [UInt32: NSRange]) {
         let text = NSMutableAttributedString()
         var ranges: [UInt32: NSRange] = [:]
@@ -218,7 +237,7 @@ struct NotationView: NSViewRepresentable {
             case .move:
                 var attrs = moveAttributes(depth: token.depth)
                 attrs[.dcsNode] = tagged(token)
-                let range = append(token.text, attrs)
+                let range = append(figurines ? figurine(token.text) : token.text, attrs)
                 if let node = token.nodeId { ranges[node] = range }
                 needSpace = true
             case .nag:
@@ -278,7 +297,8 @@ struct NotationView: NSViewRepresentable {
             ]))
         }
         doc.append(NSAttributedString(string: "\n\n"))
-        doc.append(buildAttributed(session.tokens, fenAt: { try? game.fenAt(id: $0) }).0)
+        doc.append(buildAttributed(session.tokens, figurines: AppSettings.shared.figurines,
+                                   fenAt: { try? game.fenAt(id: $0) }).0)
         return doc
     }
 

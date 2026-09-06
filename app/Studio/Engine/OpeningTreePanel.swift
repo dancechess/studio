@@ -18,15 +18,25 @@ final class OpeningTreeModel {
     private(set) var openingName: String?
     private(set) var onlineTotal: UInt32 = 0
     private(set) var fromCache = false
+    /// "N — Bg4 is not in Masters (1,309,466 games)", when the move just
+    /// played does not appear from its parent position in the chosen
+    /// source; nil otherwise. Silent when the parent position itself is
+    /// unknown to the source — leaving the book is not the same as never
+    /// having been in it.
+    private(set) var noveltyText: String? {
+        didSet { Self.noveltyLast = noveltyText }
+    }
 
     private var fen = ""
+    private var parentFen: String?
+    private var san: String?
     private var generation = 0
     private var pending: Task<Void, Never>?
 
-    func toggle(fen: String) {
+    func toggle(fen: String, parentFen: String? = nil, san: String? = nil) {
         visible.toggle()
         if visible {
-            update(fen: fen)
+            update(fen: fen, parentFen: parentFen, san: san)
         } else {
             hide()
         }
@@ -38,6 +48,7 @@ final class OpeningTreeModel {
         rows = []
         errorText = nil
         openingName = nil
+        noveltyText = nil
         DatabaseStore.shared.setPositionFilter(nil)
     }
 
@@ -48,26 +59,36 @@ final class OpeningTreeModel {
         rows = []
         errorText = nil
         openingName = nil
-        if visible { update(fen: fen, immediate: true) }
+        if visible { update(fen: fen, parentFen: parentFen, san: san, immediate: true) }
     }
 
     /// Refreshes stats for the position. The local list filter is always
     /// the open database (that is what the bottom pane shows); the rows
     /// come from the chosen source. Online sources are debounced: stepping
     /// through moves must not fire a request per keypress.
-    func update(fen: String, immediate: Bool = false) {
+    func update(fen: String, parentFen: String? = nil, san: String? = nil,
+                immediate: Bool = false) {
         guard visible else { return }
         self.fen = fen
+        self.parentFen = parentFen
+        self.san = san
         DatabaseStore.shared.setPositionFilter(fen)
         generation += 1
         let gen = generation
         pending?.cancel()
+        noveltyText = nil
         switch source {
         case .database:
             loading = false
             errorText = nil
             openingName = nil
             rows = (try? DatabaseStore.shared.db?.openingTree(fen: fen)) ?? []
+            if let parentFen, let san,
+               let parentRows = try? DatabaseStore.shared.db?.openingTree(fen: parentFen) {
+                noveltyText = Self.novelty(san: san, in: parentRows,
+                                           total: parentRows.reduce(0) { $0 + $1.games },
+                                           source: source)
+            }
         default:
             let src = source
             pending = Task { @MainActor in
@@ -86,6 +107,16 @@ final class OpeningTreeModel {
                     openingName = result.opening
                     fromCache = result.cached
                     Self.debugDump(source: src, fen: fen, result: result)
+                    // the novelty question is about the PARENT position:
+                    // one more lookup, almost always already cached since
+                    // he just stepped through it
+                    if let parentFen, let san,
+                       let parent = try? await LichessExplorer.shared.fetch(
+                           source: src, fen: parentFen, settings: AppSettings.shared),
+                       gen == generation {
+                        noveltyText = Self.novelty(san: san, in: parent.rows,
+                                                   total: parent.total, source: src)
+                    }
                 } catch is CancellationError {
                     return
                 } catch {
@@ -102,7 +133,20 @@ final class OpeningTreeModel {
         }
     }
 
+    private static func novelty(san: String, in rows: [TreeMove], total: UInt32,
+                                source: ReferenceSource) -> String? {
+        guard total > 0 else { return nil }
+        let bare = san.trimmingCharacters(in: CharacterSet(charactersIn: "+#"))
+        if rows.contains(where: { $0.san.trimmingCharacters(in: CharacterSet(charactersIn: "+#")) == bare }) {
+            return nil
+        }
+        let games = NumberFormatter.localizedString(from: NSNumber(value: total), number: .decimal)
+        return "N — \(san) is not in \(source.label) (\(games) games from here)"
+    }
+
     /// DCS_AUTO_TREE_OUT=<file>: what the panel got, for a smoke run.
+    private nonisolated(unsafe) static var noveltyLast: String?
+
     private static func debugDump(source: ReferenceSource, fen: String, result: ExplorerResult) {
         guard let path = ProcessInfo.processInfo.environment["DCS_AUTO_TREE_OUT"] else { return }
         let lines = result.rows.prefix(6).map {
@@ -112,6 +156,13 @@ final class OpeningTreeModel {
             + "total: \(result.total)\nopening: \(result.opening ?? "-")\n"
             + lines.joined(separator: "\n") + "\n"
         try? text.write(toFile: path, atomically: true, encoding: .utf8)
+        // the novelty line lands a moment later; append it when it does
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1500))
+            if let n = self.noveltyLast {
+                try? (text + "novelty: \(n)\n").write(toFile: path, atomically: true, encoding: .utf8)
+            }
+        }
     }
 }
 
@@ -172,6 +223,23 @@ struct OpeningTreePanel: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             Divider()
+            if let novelty = tree.noveltyText {
+                HStack(spacing: 8) {
+                    Text(novelty)
+                        .font(.caption.bold())
+                        .foregroundStyle(.orange)
+                        .lineLimit(1)
+                    Spacer()
+                    Button(session.hasNoveltyMark ? "Unmark N" : "Mark N") {
+                        session.applyNag(146)
+                    }
+                    .controlSize(.mini)
+                    .help("NAG $146 — the ChessBase novelty mark, written into the game")
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                Divider()
+            }
             if let error = tree.errorText {
                 Text(error)
                     .font(.caption)

@@ -102,6 +102,9 @@ struct StudioCommands: Commands {
             Button("Insert Diagram") { actions?.insertDiagram?() }
                 .keyboardShortcut("d")
                 .disabled(actions?.insertDiagram == nil)
+            Toggle("Figurine Notation", isOn: Binding(
+                get: { AppSettings.shared.figurines },
+                set: { AppSettings.shared.figurines = $0 }))
             Button("Merge Selected Games") { actions?.mergeGames?() }
                 .disabled(actions?.mergeGames == nil)
             Divider()

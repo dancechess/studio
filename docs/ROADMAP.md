@@ -49,10 +49,12 @@ moves, and a 429 waits out lichess's `Retry-After`.
 **Whole-game analysis.** Game ▸ Analyze Game… walks the main line at a fixed
 depth and marks the moves that lose more than a threshold (`?!` `?` `??`),
 writes what the eval did ("+2.16 → +3.27"), and inserts the engine's line as a
-variation. One undo step for the whole run; existing comments are appended to.
-A mating move is never marked, and neither is the engine's own first choice
-(an eval that drops after a forced move is the search seeing further, not the
-player going wrong).
+variation. Mark both sides or just one — a coach wants the student's mistakes,
+not the opponent's — and the main line alone or every variation in the tree.
+One undo step for the whole run; existing comments are appended to. A mating
+move is never marked, and neither is the engine's own first choice (an eval
+that drops after a forced move is the search seeing further, not the player
+going wrong).
 
 **Merging games.** Select several rows and Merge Selected Games: the first
 game's tree takes the others as variations wherever they diverge, comments and
@@ -62,6 +64,17 @@ NAGs included. The result opens as a new, unsaved game.
 NAG `$220`, the ChessBase convention, so it round-trips. File ▸ Print Game… and
 Export Game as PDF… lay out a title block and the notation exactly as the
 panel shows it, diagrams included.
+
+**Figurines.** ♘f3 in the panel and on paper, letters in the file
+(Game ▸ Figurine Notation to switch). Null moves (`--`) parse, replay, and
+round-trip, so analysis PGNs from other tools open whole.
+
+**Novelties.** With the reference panel open, a move that does not appear from
+its parent position in the chosen source is called out — "N — Ke2 is not in
+Masters (314,452 games from here)" — with a button that writes the ChessBase
+novelty mark (`$146`) into the game. Silent when the parent position itself
+is unknown to the source: leaving the book is not the same as never having
+been in it.
 
 **Filtering.** Beside the search field, a filter for result, date range and
 Elo range (both players); every criterion combines with the text search and
@@ -85,8 +98,8 @@ game, which is what makes studies and tactics puzzles usable.
   cache is rebuilt from it. Save before editing the file elsewhere.
 - **No multi-database management**, no cross-file search, no player or
   tournament index, no position or material search.
-- **Analysis is main line only** and uses a fixed depth; there is no
-  time-based or full-tree pass, and no tablebases.
+- **Analysis uses a fixed depth**; there is no time budget, no second
+  engine, and no tablebases.
 - **Printing is the notation as shown**; there is no page layout to speak of
   beyond a title block, and no HTML export.
 - **Not sandboxed.** Sandboxing will need security-scoped bookmarks before

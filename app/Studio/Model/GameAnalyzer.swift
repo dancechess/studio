@@ -20,8 +20,25 @@ struct AnalysisMark {
     let lineComment: String?
 }
 
+enum AnalysisSide: String, CaseIterable, Identifiable {
+    case both, white, black
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .both: "Both"
+        case .white: "White"
+        case .black: "Black"
+        }
+    }
+}
+
 struct AnalysisSettings {
     var depth = 18
+    /// Whose moves get marked. A coach looking at a student's game wants
+    /// the student's mistakes, not the opponent's.
+    var side: AnalysisSide = .both
+    /// Every line in the tree, not just the main one.
+    var variations = false
     /// Centipawn loss thresholds, mover's perspective.
     var inaccuracy = 50
     var mistake = 100
@@ -90,42 +107,53 @@ final class GameAnalyzer {
             return nil
         }
 
-        // the path root → last mainline move; the root is analyzed too,
-        // since it is the "before" of move 1
-        var path = session.game.mainline()
-        if path.first != 0 { path.insert(0, at: 0) }
-        guard path.count > 1 else { errorText = "Nothing to analyze"; return nil }
-        total = path.count
+        // the nodes to look at, parents before children: the main line
+        // alone, or every line in the tree. The root is evaluated too —
+        // it is the "before" of move 1.
+        let game = session.game
+        var nodes: [UInt32] = [0]
+        if settings.variations {
+            var stack: [UInt32] = game.node(id: 0).children.reversed()
+            while let n = stack.popLast() {
+                nodes.append(n)
+                stack.append(contentsOf: game.node(id: n).children.reversed())
+            }
+        } else {
+            nodes.append(contentsOf: game.mainline().filter { $0 != 0 })
+        }
+        guard nodes.count > 1 else { errorText = "Nothing to analyze"; return nil }
+        total = nodes.count
         done = 0
 
-        var evals: [Eval] = []
-        var fens: [String] = []
-        var stoppedAt: String?
-        for id in path {
+        var evals: [UInt32: Eval] = [:]
+        var fens: [UInt32: String] = [:]
+        var skipped = 0
+        for id in nodes {
             if cancelled { return nil }
             let fen: String
             do {
-                fen = try session.game.fenAt(id: id)
+                fen = try game.fenAt(id: id)
             } catch {
                 // an imported game can carry an illegal move (the parser
-                // keeps SAN text as written); analyze up to it and say so
-                stoppedAt = Self.label(session.game.node(id: id))
-                break
+                // keeps SAN text as written); that line ends here
+                skipped += 1
+                done += 1
+                continue
             }
-            fens.append(fen)
-            currentLabel = id == 0 ? "start" : Self.label(session.game.node(id: id))
+            fens[id] = fen
+            currentLabel = id == 0 ? "start" : Self.label(game.node(id: id))
             // a mating move ends the game: the engine has no score for the
             // position after it (a bare "mate 0" carries no pv and is
             // dropped by the reader), and 0.00 there would mark the mate
             // itself as a blunder. The SAN says what happened.
-            if id != 0, session.game.node(id: id).san.hasSuffix("#") {
-                let whiteMated = session.game.node(id: id).isWhiteMove
-                evals.append(Eval(whiteCp: whiteMated ? 10_000 : -10_000, text: "#", pv: []))
+            if id != 0, game.node(id: id).san.hasSuffix("#") {
+                let whiteMated = game.node(id: id).isWhiteMove
+                evals[id] = Eval(whiteCp: whiteMated ? 10_000 : -10_000, text: "#", pv: [])
                 done += 1
                 continue
             }
             do {
-                evals.append(try await evaluate(engine: engine, fen: fen, depth: settings.depth))
+                evals[id] = try await evaluate(engine: engine, fen: fen, depth: settings.depth)
             } catch {
                 if !cancelled { errorText = "Analysis interrupted: \(error)" }
                 return nil
@@ -134,15 +162,22 @@ final class GameAnalyzer {
         }
         if cancelled { return nil }
         guard evals.count > 1 else {
-            errorText = "The game's first move is illegal (\(stoppedAt ?? "?"))"
+            errorText = "The game's first move is illegal"
             return nil
         }
 
         var marks: [AnalysisMark] = []
-        for k in 0..<(evals.count - 1) {
-            let before = evals[k], after = evals[k + 1]
-            let node = path[k + 1]
-            let info = session.game.node(id: node)
+        var judged = 0
+        for node in nodes where node != 0 {
+            let info = game.node(id: node)
+            guard let parent = info.parent, let before = evals[parent],
+                  let after = evals[node], let parentFen = fens[parent] else { continue }
+            switch settings.side {
+            case .white where !info.isWhiteMove: continue
+            case .black where info.isWhiteMove: continue
+            default: break
+            }
+            judged += 1
             let sign = info.isWhiteMove ? 1 : -1
             let moverBefore = sign * before.whiteCp
             let loss = sign * (before.whiteCp - after.whiteCp)
@@ -162,7 +197,7 @@ final class GameAnalyzer {
             // later, not the player going wrong — the classic depth
             // artifact, and marking it would put "??" on forced moves
             let bestLine = before.pv.isEmpty ? [] :
-                ((try? uciLineToSan(fen: fens[k],
+                ((try? uciLineToSan(fen: parentFen,
                                     moves: Array(before.pv.prefix(settings.lineLength)))) ?? [])
             guard let best = bestLine.first, Self.bare(best) != Self.bare(info.san) else { continue }
             let line = nag == 6 ? [] : bestLine
@@ -173,11 +208,11 @@ final class GameAnalyzer {
                 lineComment: line.isEmpty ? nil : before.text))
         }
         session.applyAnalysis(marks)
-        let analyzed = evals.count - 1
+        let who = settings.side == .both ? "moves" : "\(settings.side.label) moves"
         summary = (marks.isEmpty
-            ? "No move lost more than \(settings.inaccuracy) centipawns at depth \(settings.depth)."
-            : "\(marks.count) of \(analyzed) moves marked at depth \(settings.depth).")
-            + (stoppedAt.map { " Stopped at \($0): illegal move in the game." } ?? "")
+            ? "None of \(judged) \(who) lost more than \(settings.inaccuracy) centipawns at depth \(settings.depth)."
+            : "\(marks.count) of \(judged) \(who) marked at depth \(settings.depth).")
+            + (skipped > 0 ? " \(skipped) position(s) could not be replayed (illegal move in the game)." : "")
         return marks.count
     }
 
