@@ -28,7 +28,7 @@ coaches on macOS. Part of the DanceChess family.
 - **Diagrams, print, PDF** — `⌘D` puts a diagram after a move (stored as
   ChessBase's `$220`); File ▸ Print Game… / Export Game as PDF….
 - **Filters** — result, date range, Elo range, combined with text search.
-- **Opening reference** (⌘T) — move statistics with W/D/L for the current
+- **Opening reference** (⌘T) — your database, or lichess's Masters / Lichess / Player explorers (your own lichess token, cached per position) — move statistics with W/D/L for the current
   position across the open file, and the list filters to the games that
   reach it (transposition-aware).
 - **Game entry** — a blank board, a ChessBase-style save mask, and your

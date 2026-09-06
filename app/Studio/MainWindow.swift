@@ -210,6 +210,10 @@ struct MainWindow: View {
             // dev hook: open reference mode and step one move (screenshots)
             if ProcessInfo.processInfo.environment["DCS_AUTO_TREE"] != nil {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    if let name = ProcessInfo.processInfo.environment["DCS_AUTO_TREE_SOURCE"],
+                       let src = ReferenceSource(rawValue: name) {
+                        tree.setSource(src)
+                    }
                     tree.toggle(fen: session.fen)
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {

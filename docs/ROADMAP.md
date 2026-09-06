@@ -37,6 +37,14 @@ bundled in the app.
 **Reference.** `⌘T` shows opening statistics for the current position — moves,
 game counts, a W/D/L bar, white's score — and filters the game list to the
 games that reach it. Matching is by Zobrist hash, so transpositions count.
+The panel's source switches between the open database and lichess's
+**Masters**, **Lichess** (rating band and speeds of your choosing) and
+**Player** (a lichess username's own games) explorers. lichess requires an API token
+for these; it is **your own** (a read-only one, made in one click from the
+panel's settings) and lives in the Keychain — the app ships none, since one
+token in the binary would be one quota shared by everybody. Results are
+cached on disk per position, requests are debounced while you step through
+moves, and a 429 waits out lichess's `Retry-After`.
 
 **Whole-game analysis.** Game ▸ Analyze Game… walks the main line at a fixed
 depth and marks the moves that lose more than a threshold (`?!` `?` `??`),
@@ -87,8 +95,6 @@ game, which is what makes studies and tactics puzzles usable.
 ## Ideas, not commitments
 
 - Engine-correlation and game-quality analysis.
-- An online opening reference (the lichess masters / lichess explorer
-  endpoints need no token; a local cache keyed by position is what matters).
 - Signing, notarization, and a Sparkle update feed.
 - Deeper opening-book work (repertoire files, novelty detection).
 
