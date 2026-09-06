@@ -994,4 +994,34 @@ mod tests {
 
         let _ = std::fs::remove_file(path);
     }
+
+    /// The sample fixture is what every screenshot, dev hook and first run
+    /// opens. It once carried an illegal move (9.d3 twice) that the parser
+    /// kept as written — `fen_at` threw halfway through the game and the
+    /// whole-game analysis stopped there. Every game must replay.
+    #[test]
+    fn sample_fixture_games_all_replay_legally() {
+        let (db, path) = temp_db();
+        let stats = db
+            .import_pgn_file(concat!(env!("CARGO_MANIFEST_DIR"), "/../fixtures/sample.pgn").into())
+            .unwrap();
+        assert_eq!(stats.skipped, 0);
+        assert!(stats.imported >= 4, "fixture should hold several games");
+        for id in 1..=stats.imported as i64 {
+            let g = crate::game::Game::from_pgn(db.game_pgn(id).unwrap()).unwrap();
+            let last = *g.mainline().last().expect("a game with moves");
+            g.fen_at(last).unwrap_or_else(|e| panic!("game {id} does not replay: {e}"));
+        }
+        // the four results, so the filter UI has something to show
+        let results: std::collections::HashSet<String> = db
+            .list_games(0, 100, GameSort::Number, true)
+            .unwrap()
+            .into_iter()
+            .map(|g| g.result)
+            .collect();
+        for r in ["1-0", "0-1", "1/2-1/2", "*"] {
+            assert!(results.contains(r), "fixture lacks a {r} game");
+        }
+        let _ = std::fs::remove_file(path);
+    }
 }
