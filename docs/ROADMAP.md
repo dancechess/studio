@@ -17,6 +17,17 @@ a `.pgn.bak` kept from before the session's first write. New files, manual game
 entry with a ChessBase-style save mask, delete, and per-game PGN export all
 round-trip through the same path.
 
+**Games move between files.** Right-click ▸ Copy to ▸ *another open tab*
+appends the selected games to that file and writes it back once. A game
+already there — same start position, same main line, whatever the headers
+say — is skipped and counted, so copying twice lands once.
+
+**The file is watched.** If another program changes a `.pgn` while it is
+open here, a banner offers **Reload** (take the file as it is now; unsaved
+edits to its games are lost) or **Keep Mine** (carry on; the next save
+replaces the file, with a `.pgn.bak` kept). The app's own saves do not
+trigger it.
+
 **One window per file, as tabs.** Every `.pgn` you open gets its own window,
 and windows tab together the way Safari's do (drag them apart if you prefer
 windows). A file is opened once: opening it again brings its tab forward. Each
@@ -96,13 +107,12 @@ game, which is what makes studies and tactics puzzles usable.
 - **Not notarized.** The released build is ad-hoc signed, so macOS quarantines
   it on first launch. See the install notes in the README.
 - **Apple Silicon only.** No Intel build.
-- **A source file edited outside the app discards in-app edits.** Cache
-  freshness is a modification-time comparison made when the file is opened;
-  if the `.pgn` is newer, the cache is rebuilt from it. Save before editing
-  the file elsewhere — and with several tabs open for a long session, this
-  matters more than it used to. A file watcher is the next step.
-- **Nothing moves between tabs yet.** Copying games from one file to another
-  is the second half of the multi-file work.
+- **A source file edited outside the app while it is closed here is taken as
+  the truth.** Cache freshness is a modification-time comparison made when
+  the file is opened; if the `.pgn` is newer, the cache is rebuilt from it
+  and in-app edits that were never saved are gone. (While the file is open,
+  the banner above catches this.)
+- **No drag and drop between tabs**; copying is a menu command.
 - **No cross-file search**, no player or tournament index, no position or
   material search. A search is about one file — the tab it runs in.
 - **Analysis uses a fixed depth**; there is no time budget, no second

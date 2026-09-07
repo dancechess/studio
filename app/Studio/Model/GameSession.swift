@@ -619,6 +619,14 @@ final class GameSession {
             boxes.compactMap(\.session)
                 .filter { $0.sourceGameId >= 0 && $0.isModified && $0.store != nil }
         }
+
+        /// The file is being re-imported: ids of its games are about to
+        /// change, so no session may keep one.
+        func detach(store: DatabaseStore) {
+            for s in boxes.compactMap(\.session) where s.store === store {
+                s.detachFromDatabase()
+            }
+        }
     }
 
     private func applyFen() {

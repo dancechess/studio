@@ -254,6 +254,10 @@ final class DatabaseStore {
             try? FileManager.default.setAttributes(
                 [.modificationDate: Date()], ofItemAtPath: cacheURL.path)
         }
+        // our own write; the watcher must not read it as somebody else's
+        noteSourceDate()
+        // the rename swapped the inode under the descriptor
+        startWatching()
     }
 
     /// Loads one PGN file into this (empty) store. Reuses the file's cache
@@ -286,8 +290,9 @@ final class DatabaseStore {
     private func open(url: URL, cacheURL: URL) async throws {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        let fresh = Self.cacheIsFresh(cacheURL, source: url)
         let db = try Database.open(path: cacheURL.path)
+        // newer than the file, AND laid out the way this version expects
+        let fresh = Self.cacheIsFresh(cacheURL, source: url) && !db.needsRebuild()
         if fresh {
             self.db = db
             gameCount = (try? db.gameCount()) ?? 0
@@ -307,6 +312,147 @@ final class DatabaseStore {
         filteredCount = gameCount
         generation += 1
         revision += 1
+        noteSourceDate()
+        startWatching()
+    }
+
+    // MARK: copying games in from another file
+
+    /// Appends games (as PGN text) that are not already here — "already"
+    /// meaning the same start position and main line, whatever the
+    /// headers say — then writes the file back once. Returns how many
+    /// landed and how many were duplicates.
+    func copyGames(_ pgns: [String]) throws -> (copied: Int, duplicates: Int) {
+        guard let db, canWriteBack else {
+            throw ChessError.Database(reason: "no PGN file to copy into")
+        }
+        var copied = 0, duplicates = 0
+        for pgn in pgns {
+            if (try? db.findDuplicate(pgn: pgn)) ?? nil != nil {
+                duplicates += 1
+                continue
+            }
+            _ = try db.addGame(pgn: pgn)
+            copied += 1
+        }
+        if copied > 0 {
+            try writeBack()
+            gameCount = (try? db.gameCount()) ?? gameCount
+            recount()
+            revision += 1
+        }
+        return (copied, duplicates)
+    }
+
+    // MARK: the source file changing under us
+
+    /// Another program wrote the file since it was loaded (or since we
+    /// last wrote it). The window shows a banner; `reloadFromDisk` or
+    /// `keepMine` clears it. Until one is chosen, saving would overwrite
+    /// the other program's work with this cache — which is also what
+    /// `keepMine` chooses, deliberately, with the .bak as the safety net.
+    private(set) var externallyChanged = false
+    private var watcher: DispatchSourceFileSystemObject?
+    private var watchedFD: Int32 = -1
+    /// The file's modification date as we last knew it — after loading it
+    /// and after each write of our own, which is how our own writes are
+    /// told apart from somebody else's.
+    private var knownSourceDate: Date?
+
+    private func sourceDate() -> Date? {
+        guard let path = sourceURL?.path,
+              let attrs = try? FileManager.default.attributesOfItem(atPath: path) else { return nil }
+        return attrs[.modificationDate] as? Date
+    }
+
+    private func noteSourceDate() { knownSourceDate = sourceDate() }
+
+    private func startWatching() {
+        stopWatching()
+        guard let path = sourceURL?.path else { return }
+        let fd = Darwin.open(path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        watchedFD = fd
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd, eventMask: [.write, .rename, .delete, .attrib, .extend], queue: .main)
+        source.setEventHandler { [weak self] in
+            guard let self else { return }
+            let flags = source.data
+            MainActor.assumeIsolated { self.fileEvent(flags) }
+        }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        watcher = source
+    }
+
+    private func stopWatching() {
+        watcher?.cancel()
+        watcher = nil
+        watchedFD = -1
+    }
+
+    private func fileEvent(_ flags: DispatchSource.FileSystemEvent) {
+        // editors save by writing a new file and renaming it over ours:
+        // the descriptor now points at the old inode, so watch the path
+        // again once the dust settles
+        if flags.contains(.rename) || flags.contains(.delete) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self else { return }
+                MainActor.assumeIsolated {
+                    self.startWatching()
+                    self.checkForExternalChange()
+                }
+            }
+            return
+        }
+        checkForExternalChange()
+    }
+
+    private func checkForExternalChange() {
+        guard !externallyChanged, let now = sourceDate() else { return }
+        if let known = knownSourceDate, now.timeIntervalSince(known) <= 0.5 { return }
+        externallyChanged = true
+    }
+
+    /// Throw this cache away and import the file as it is now. Games of
+    /// this file open in a session are detached first: after a re-import
+    /// the ids are file order again, and a session still holding an old
+    /// id could save into a different game.
+    func reloadFromDisk() {
+        guard let url = sourceURL, let db, !importing else { return }
+        externallyChanged = false
+        importing = true
+        GameSession.SessionRegistry.shared.detach(store: self)
+        Task {
+            do {
+                statusText = "Reloading…"
+                try await Self.runClear(db: db)
+                let stats = try await Self.runImport(db: db, path: url.path)
+                gameCount = (try? db.gameCount()) ?? 0
+                statusText = String(format: "reloaded: %d games (%d skipped) in %.1fs",
+                                    stats.imported, stats.skipped, Double(stats.millis) / 1000)
+                if let cacheURL {
+                    try? FileManager.default.setAttributes(
+                        [.modificationDate: Date()], ofItemAtPath: cacheURL.path)
+                }
+                filter = GameFilter(text: nil, result: nil, dateFrom: nil, dateTo: nil,
+                                    minElo: nil, maxElo: nil, fen: nil)
+                filteredCount = gameCount
+                generation += 1
+                revision += 1
+                noteSourceDate()
+            } catch {
+                errorText = "Reload failed — \(error.localizedDescription)"
+            }
+            importing = false
+        }
+    }
+
+    /// Dismiss the banner and carry on with this cache; the next save
+    /// replaces the file (a .pgn.bak of the current file is kept).
+    func keepMine() {
+        externallyChanged = false
+        noteSourceDate()
     }
 
     /// One cache db per source file, keyed by its canonical path.

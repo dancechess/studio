@@ -45,6 +45,8 @@ struct GameListView: NSViewRepresentable {
     let onDeleteRequest: ((Int64) -> Void)?
     /// Right-click with several rows selected → Merge Selected Games.
     var onMergeRequest: (([Int64]) -> Void)? = nil
+    /// Right-click → Copy to ▸ another open file.
+    var onCopyRequest: (([Int64], DatabaseStore) -> Void)? = nil
     /// The game to land on when the list first fills (the one last viewed
     /// in this file); nil = row 0.
     var initialSelection: Int64? = nil
@@ -85,6 +87,11 @@ struct GameListView: NSViewRepresentable {
                                keyEquivalent: "")
         merge.target = context.coordinator
         menu.addItem(merge)
+        // filled in when the menu opens: the other files open right now
+        let copy = NSMenuItem(title: "Copy to", action: nil, keyEquivalent: "")
+        copy.submenu = NSMenu(title: "Copy to")
+        menu.addItem(copy)
+        menu.delegate = context.coordinator
         table.menu = menu
         // initial sort indicator mirrors the store (file order)
         table.sortDescriptors = [NSSortDescriptor(key: "number", ascending: true)]
@@ -118,7 +125,7 @@ struct GameListView: NSViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSMenuDelegate {
         struct ColumnSpec {
             let id: String
             let title: String
@@ -373,6 +380,39 @@ struct GameListView: NSViewRepresentable {
             return table.selectedRowIndexes.compactMap { summary(at: $0)?.id }
         }
 
+        /// The context menu is opening: list every other open file under
+        /// "Copy to". Built each time, since tabs come and go.
+        func menuNeedsUpdate(_ menu: NSMenu) {
+            guard let item = menu.items.first(where: { $0.title == "Copy to" }),
+                  let sub = item.submenu else { return }
+            sub.removeAllItems()
+            let targets = OpenStores.shared.all.filter { $0 !== view.store && $0.canWriteBack }
+            for target in targets {
+                let entry = NSMenuItem(title: target.sourceName ?? "?",
+                                       action: #selector(copyClicked(_:)), keyEquivalent: "")
+                entry.target = self
+                entry.representedObject = target
+                sub.addItem(entry)
+            }
+            if targets.isEmpty {
+                let none = NSMenuItem(title: "No other file open", action: nil, keyEquivalent: "")
+                none.isEnabled = false
+                sub.addItem(none)
+            }
+            item.isEnabled = view.onCopyRequest != nil && !targets.isEmpty
+                && (!selectedIds.isEmpty || (table?.clickedRow ?? -1) >= 0)
+        }
+
+        @objc func copyClicked(_ sender: NSMenuItem) {
+            guard let target = sender.representedObject as? DatabaseStore else { return }
+            var ids = selectedIds
+            if ids.isEmpty, let table, table.clickedRow >= 0, let g = summary(at: table.clickedRow) {
+                ids = [g.id]
+            }
+            guard !ids.isEmpty else { return }
+            view.onCopyRequest?(ids, target)
+        }
+
         @objc func mergeClicked(_ sender: Any?) {
             let ids = selectedIds
             guard ids.count >= 2 else { return }
@@ -389,6 +429,7 @@ struct GameListView: NSViewRepresentable {
             if item.action == #selector(mergeClicked(_:)) {
                 return view.onMergeRequest != nil && selectedIds.count >= 2
             }
+            if item.action == #selector(copyClicked(_:)) { return true }
             return view.onDeleteRequest != nil && (table?.clickedRow ?? -1) >= 0
         }
     }

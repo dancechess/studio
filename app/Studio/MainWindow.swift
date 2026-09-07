@@ -73,6 +73,7 @@ struct MainWindow: View {
                 .frame(minHeight: 380)
 
             VStack(spacing: 0) {
+                if store.externallyChanged { changedOnDiskBanner }
                 searchBar
                 Divider()
                 GameListView(
@@ -95,6 +96,7 @@ struct MainWindow: View {
                     },
                     onDeleteRequest: { confirmAndDelete($0) },
                     onMergeRequest: { mergeGames($0) },
+                    onCopyRequest: { ids, target in copyGames(ids, to: target) },
                     initialSelection: store.lastSelectedGameId
                 )
                 Divider()
@@ -163,6 +165,30 @@ struct MainWindow: View {
             if ProcessInfo.processInfo.environment["DCS_AUTO_PLUS"] != nil, url != nil {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                     NSApp.sendAction(#selector(NSResponder.newWindowForTab(_:)), to: nil, from: nil)
+                }
+            }
+            // dev hook: copy games 1–2 of THIS window's file into the other
+            // open file, then report (run twice to see duplicates skipped)
+            if let which = ProcessInfo.processInfo.environment["DCS_AUTO_COPY"],
+               url?.lastPathComponent == which {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    guard let target = OpenStores.shared.all.first(where: { $0 !== store }) else { return }
+                    let before = target.gameCount
+                    copyGames([1, 2], to: target)
+                    let out = ProcessInfo.processInfo.environment["DCS_AUTO_COPY_OUT"] ?? "/tmp/dcs-copy.txt"
+                    try? "target before: \(before) after: \(target.gameCount)\nsource status: \(store.statusText ?? "-")\ntarget status: \(target.statusText ?? "-")\n"
+                        .write(toFile: out, atomically: true, encoding: .utf8)
+                }
+            }
+            // dev hook: the file-changed banner — report after a delay,
+            // optionally reloading first
+            if let out = ProcessInfo.processInfo.environment["DCS_AUTO_WATCH_OUT"], url != nil {
+                if ProcessInfo.processInfo.environment["DCS_AUTO_WATCH_RELOAD"] != nil {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 5) { store.reloadFromDisk() }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 7) {
+                    try? "changed: \(store.externallyChanged)\ngames: \(store.gameCount)\nstatus: \(store.statusText ?? "-")\n"
+                        .write(toFile: out, atomically: true, encoding: .utf8)
                 }
             }
             // dev hook: report the windows/tabs and engine states
@@ -426,6 +452,44 @@ struct MainWindow: View {
             if let url { FileOpener.shared.release(url) }
         }
         .frame(minWidth: 860, minHeight: 600)
+    }
+
+    /// The source file changed under us. Reload throws this cache away —
+    /// including unsaved edits to this file's games — and takes the file as
+    /// it is now; Keep Mine carries on, and the next save replaces the
+    /// file (with a .pgn.bak kept).
+    private var changedOnDiskBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            Text("“\(store.sourceURL?.lastPathComponent ?? "This file")” was changed by another program.")
+                .font(.system(size: 12))
+            Spacer()
+            Button("Reload") { store.reloadFromDisk() }
+                .help("Take the file as it is on disk now. Unsaved edits to its games are lost.")
+            Button("Keep Mine") { store.keepMine() }
+                .help("Keep what this window has; the next save replaces the file (a .pgn.bak is kept).")
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.yellow.opacity(0.18))
+    }
+
+    /// Copy to ▸ another open file: whole games, duplicates (same moves)
+    /// skipped, the target written back once. Both tabs say what happened.
+    private func copyGames(_ ids: [Int64], to target: DatabaseStore) {
+        let pgns = ids.compactMap { store.pgn(for: $0) }
+        guard !pgns.isEmpty else { return }
+        do {
+            let r = try target.copyGames(pgns)
+            let what = r.duplicates == 0
+                ? "\(r.copied) game\(r.copied == 1 ? "" : "s")"
+                : "\(r.copied) game\(r.copied == 1 ? "" : "s") (\(r.duplicates) already there)"
+            store.setStatus("copied \(what) to “\(target.sourceName ?? "?")”")
+            target.setStatus("\(what) copied in from “\(store.sourceName ?? "?")”")
+        } catch {
+            store.setStatus("copy failed: \(error.localizedDescription)")
+        }
     }
 
     private var searchBar: some View {
