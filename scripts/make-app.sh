@@ -6,7 +6,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="$ROOT/dist/DC Studio.app"
-VERSION="${VERSION:-0.1.0}"   # scripts/make-release.sh overrides this from the tag
+VERSION="${VERSION:-0.2.0}"   # scripts/make-release.sh overrides this from the tag
 
 "$ROOT/scripts/build-core.sh" >/dev/null
 (cd "$ROOT/app" && swift build -c release)

@@ -1,3 +1,7 @@
+@NOTES@
+
+---
+
 **Apple Silicon Mac, macOS 14 (Sonoma) or later.**
 
 Download `@DMG@`, open it, drag **DC Studio** into Applications.

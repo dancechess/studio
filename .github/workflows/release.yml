@@ -22,6 +22,8 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the tag's annotation is the release's "what's new"
 
       - name: Resolve version
         id: v
@@ -57,9 +59,22 @@ jobs:
           DMG="DC-Studio-$VERSION-arm64.dmg"
           SHA="$(cut -d' ' -f1 "dist/$DMG.sha256")"
           ENGINE="$( { echo uci; echo quit; } | stockfish | sed -n 's/^id name //p' | head -1)"
-          sed -e "s|@DMG@|$DMG|g" -e "s|@SHA@|$SHA|g" \
-              -e "s|@ENGINE@|$ENGINE|g" -e "s|@TAG@|$GITHUB_REF_NAME|g" \
-              .github/release-notes.tmpl.md > dist/NOTES.md
+          # what's new = the annotated tag's message (a lightweight tag gives
+          # an empty section, which is honest rather than wrong)
+          if [ "${{ github.event_name }}" = "push" ]; then
+            git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > dist/WHATSNEW.md
+          else
+            echo "_Manual build, not a release._" > dist/WHATSNEW.md
+          fi
+          python3 - <<'EOF'
+          import pathlib, os
+          tmpl = pathlib.Path(".github/release-notes.tmpl.md").read_text()
+          notes = pathlib.Path("dist/WHATSNEW.md").read_text().strip()
+          out = tmpl.replace("@NOTES@", notes)
+          pathlib.Path("dist/NOTES.md").write_text(out)
+          EOF
+          sed -i '' -e "s|@DMG@|$DMG|g" -e "s|@SHA@|$SHA|g" \
+              -e "s|@ENGINE@|$ENGINE|g" -e "s|@TAG@|$GITHUB_REF_NAME|g" dist/NOTES.md
           cat dist/NOTES.md
 
       - name: Upload build artifact
