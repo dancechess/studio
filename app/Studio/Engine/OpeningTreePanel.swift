@@ -9,6 +9,12 @@ import DanceChessCore
 @Observable
 @MainActor
 final class OpeningTreeModel {
+    /// The window's list: the local statistics and the games-reaching-
+    /// this-position filter are about this file.
+    let store: DatabaseStore
+
+    init(store: DatabaseStore) { self.store = store }
+
     private(set) var visible = false
     private(set) var rows: [TreeMove] = []
     private(set) var source: ReferenceSource = AppSettings.shared.referenceSource
@@ -49,7 +55,7 @@ final class OpeningTreeModel {
         errorText = nil
         openingName = nil
         noveltyText = nil
-        DatabaseStore.shared.setPositionFilter(nil)
+        store.setPositionFilter(nil)
     }
 
     func setSource(_ source: ReferenceSource) {
@@ -72,7 +78,7 @@ final class OpeningTreeModel {
         self.fen = fen
         self.parentFen = parentFen
         self.san = san
-        DatabaseStore.shared.setPositionFilter(fen)
+        store.setPositionFilter(fen)
         generation += 1
         let gen = generation
         pending?.cancel()
@@ -82,9 +88,9 @@ final class OpeningTreeModel {
             loading = false
             errorText = nil
             openingName = nil
-            rows = (try? DatabaseStore.shared.db?.openingTree(fen: fen)) ?? []
+            rows = (try? store.db?.openingTree(fen: fen)) ?? []
             if let parentFen, let san,
-               let parentRows = try? DatabaseStore.shared.db?.openingTree(fen: parentFen) {
+               let parentRows = try? store.db?.openingTree(fen: parentFen) {
                 noveltyText = Self.novelty(san: san, in: parentRows,
                                            total: parentRows.reduce(0) { $0 + $1.games },
                                            source: source)
@@ -174,10 +180,10 @@ struct OpeningTreePanel: View {
     @State private var showSettings = false
 
     private var statusText: String {
-        let local = "\(DatabaseStore.shared.matchedCount) in list"
+        let local = "\(tree.store.matchedCount) in list"
         switch tree.source {
         case .database:
-            return "\(DatabaseStore.shared.matchedCount) games reach this position"
+            return "\(tree.store.matchedCount) games reach this position"
         default:
             var parts = ["\(tree.onlineTotal) games"]
             if let name = tree.openingName { parts.append(name) }

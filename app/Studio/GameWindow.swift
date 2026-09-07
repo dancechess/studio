@@ -8,8 +8,10 @@ import DanceChessCore
 /// The single-window flow lives in MainWindow; this one keeps its own
 /// Open/Paste PGN toolbar for scratch use.
 struct GameWindow: View {
-    /// A `games.id` from the default database, or -1 for a blank board.
-    var gameId: Int64 = -1
+    /// Which file's game, or a blank board (`path` nil / `id` -1). Saving
+    /// needs that file's window to still be open; otherwise the board is
+    /// scratch.
+    var ref: GameRef
 
     @State private var session = GameSession()
     @State private var engine = EngineSession()
@@ -33,8 +35,12 @@ struct GameWindow: View {
             })
             .onAppear {
                 keyMonitor.install { handleKey($0) }
-                if gameId >= 0, let pgn = DatabaseStore.shared.pgn(for: gameId) {
-                    session.loadPgn(pgn, sourceId: gameId)
+                if let path = ref.path,
+                   let store = OpenStores.shared.store(for: URL(fileURLWithPath: path)) {
+                    session.store = store
+                    if ref.id >= 0, let pgn = store.pgn(for: ref.id) {
+                        session.loadPgn(pgn, sourceId: ref.id)
+                    }
                 }
             }
             .onDisappear {
@@ -53,12 +59,12 @@ struct GameWindow: View {
             .toolbar {
                 ToolbarItemGroup {
                     Button("Save", systemImage: "square.and.arrow.down") { saveGame() }
-                        .disabled(!DatabaseStore.shared.canWriteBack)
+                        .disabled(!(session.store?.canWriteBack ?? false))
                         .help("Save this game into the open list and its PGN file (⌘S)")
                     Button("Game Info", systemImage: "square.and.pencil") {
                         showSaveSheet = true
                     }
-                    .disabled(!DatabaseStore.shared.canWriteBack)
+                    .disabled(!(session.store?.canWriteBack ?? false))
                     .help("Edit the game's players, result, event… (⌘I)")
                     Button("Open PGN", systemImage: "folder") { showImporter = true }
                         .help("Load a PGN into this board (scratch, not the list)")
@@ -92,7 +98,7 @@ struct GameWindow: View {
             }
             .sheet(isPresented: $showSaveSheet) {
                 GameInfoSheet(session: session,
-                              listName: DatabaseStore.shared.sourceName ?? "list") {
+                              listName: session.store?.sourceName ?? "list") {
                     if session.sourceGameId >= 0 {
                         SavePrompt.save(session)
                     } else {

@@ -55,6 +55,8 @@ final class AppSettings {
     private static let sourceKey = "referenceSource"
     private static let tokenAccount = "lichess-token"
     private static let figurinesKey = "figurineNotation"
+    private static let recentFilesKey = "recentFiles"
+    private static let openFilesKey = "openFiles"
     /// Where to make one: a read-only token is enough.
     static let tokenURL = URL(string: "https://lichess.org/account/oauth/token/create?description=DC+Studio+opening+explorer")!
 
@@ -84,6 +86,27 @@ final class AppSettings {
     var figurines: Bool {
         didSet { UserDefaults.standard.set(figurines, forKey: Self.figurinesKey) }
     }
+    /// Recently opened PGN paths, newest first (File ▸ Open Recent).
+    private(set) var recentFiles: [String]
+    /// The files open when the app last ran, in window order — reopened
+    /// as tabs on launch.
+    var openFiles: [String] {
+        didSet { UserDefaults.standard.set(openFiles, forKey: Self.openFilesKey) }
+    }
+
+    func rememberRecent(_ url: URL) {
+        let path = url.path
+        var list = recentFiles.filter { $0 != path }
+        list.insert(path, at: 0)
+        recentFiles = Array(list.prefix(8))
+        UserDefaults.standard.set(recentFiles, forKey: Self.recentFilesKey)
+    }
+
+    func clearRecents() {
+        recentFiles = []
+        UserDefaults.standard.removeObject(forKey: Self.recentFilesKey)
+    }
+
     /// Keychain-backed; nil when unset.
     private(set) var lichessToken: String?
 
@@ -100,6 +123,11 @@ final class AppSettings {
         lichessSpeeds = d.string(forKey: Self.speedsKey) ?? "blitz,rapid,classical"
         referenceSource = ReferenceSource(rawValue: d.string(forKey: Self.sourceKey) ?? "") ?? .database
         figurines = d.object(forKey: Self.figurinesKey) as? Bool ?? true
+        recentFiles = d.stringArray(forKey: Self.recentFilesKey) ?? []
+        // first launch after the single-list days: the last list becomes the
+        // first tab, so nothing the user had open goes missing
+        openFiles = d.stringArray(forKey: Self.openFilesKey)
+            ?? (d.stringArray(forKey: "lastSourcePaths") ?? [])
         lichessToken = KeychainStore.get(Self.tokenAccount)
         // dev hook: a token for a smoke run, without touching the Keychain
         if let env = ProcessInfo.processInfo.environment["DCS_LICHESS_TOKEN"], !env.isEmpty {

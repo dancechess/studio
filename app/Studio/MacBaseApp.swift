@@ -1,12 +1,11 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Per-window actions surfaced to the menu bar (nil = item disabled).
 /// Always-equal so SwiftUI doesn't churn on every body evaluation — the
 /// closures read live @State storage regardless.
 struct WindowActions: Equatable {
-    var openPgn: (() -> Void)?
-    var newPgnFile: (() -> Void)?
     var newGame: (() -> Void)?
     var save: (() -> Void)?
     var gameInfo: (() -> Void)?
@@ -22,14 +21,9 @@ struct WindowActions: Equatable {
     var printGame: (() -> Void)?
     var exportPdf: (() -> Void)?
     var mergeGames: (() -> Void)?
-    var openRecent: ((String) -> Void)?
-    var clearRecents: (() -> Void)?
-    var recentFiles: [String] = []
 
-    // recents are the only data the menu renders; closures read live state
-    static func == (lhs: WindowActions, rhs: WindowActions) -> Bool {
-        lhs.recentFiles == rhs.recentFiles
-    }
+    // nothing here is rendered; the closures read live state
+    static func == (lhs: WindowActions, rhs: WindowActions) -> Bool { true }
 }
 
 struct WindowActionsKey: FocusedValueKey {
@@ -48,30 +42,29 @@ extension FocusedValues {
 /// per-window event monitor.
 struct StudioCommands: Commands {
     @FocusedValue(\.windowActions) private var actions
+    private var settings: AppSettings { AppSettings.shared }
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("New Game") { actions?.newGame?() }
                 .keyboardShortcut("n")
                 .disabled(actions?.newGame == nil)
-            Button("New PGN File…") { actions?.newPgnFile?() }
+            Button("New PGN File…") { FileOpener.shared.createAndOpen() }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
-                .disabled(actions?.newPgnFile == nil)
-            Button("Open PGN…") { actions?.openPgn?() }
+            Button("Open PGN…") { FileOpener.shared.chooseAndOpen() }
                 .keyboardShortcut("o")
-                .disabled(actions?.openPgn == nil)
             Menu("Open Recent") {
-                ForEach(actions?.recentFiles ?? [], id: \.self) { path in
+                ForEach(settings.recentFiles, id: \.self) { path in
                     Button((path as NSString).lastPathComponent) {
-                        actions?.openRecent?(path)
+                        FileOpener.shared.open(URL(fileURLWithPath: path))
                     }
                 }
-                if !(actions?.recentFiles ?? []).isEmpty {
+                if !settings.recentFiles.isEmpty {
                     Divider()
-                    Button("Clear Menu") { actions?.clearRecents?() }
+                    Button("Clear Menu") { settings.clearRecents() }
                 }
             }
-            .disabled((actions?.recentFiles ?? []).isEmpty)
+            .disabled(settings.recentFiles.isEmpty)
         }
         // NB: `replacing: .saveItem` would be a silent no-op — a non-document
         // File menu has no Save group to replace — so append instead.
@@ -137,17 +130,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Finder / Dock hand-off (.pgn association, drag onto the Dock icon).
+    /// Finder / Dock hand-off (.pgn association, drag onto the Dock icon):
+    /// each file is a tab; one already open just comes forward.
     func application(_ application: NSApplication, open urls: [URL]) {
         MainActor.assumeIsolated {
-            let pgns = urls.filter { $0.pathExtension.lowercased() == "pgn" }
-            guard !pgns.isEmpty else { return }
-            // unsaved edits die with the replaced list — same gate as Open
-            for session in GameSession.SessionRegistry.shared.modified {
-                guard SavePrompt.run(for: session, canCancel: true) else { return }
+            for url in urls where url.pathExtension.lowercased() == "pgn" {
+                FileOpener.shared.open(url)
             }
-            DatabaseStore.shared.openPgn(pgns)
         }
+    }
+
+    /// The "+" in the tab bar (and Window ▸ New Tab): the same as ⌘O.
+    @objc func newWindowForTab(_ sender: Any?) {
+        MainActor.assumeIsolated { FileOpener.shared.chooseAndOpen() }
     }
 
     /// Quit-time rescue for unsaved database games (one alert for all of
@@ -184,16 +179,92 @@ struct StudioApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
-        // single main window: board + notation on top, game list below
-        WindowGroup {
-            MainWindow()
+        // one window per PGN file — board + notation on top, that file's
+        // game list below. Windows tab together (native macOS tabs); a file
+        // is opened once, and opening it again brings its window forward.
+        WindowGroup(for: URL.self) { $url in
+            MainWindow(url: $url)
         }
         .commands { StudioCommands() }
-        // standalone game windows (⌘-double-click / new game); -1 = blank board
-        WindowGroup(id: "game", for: Int64.self) { $gameId in
-            GameWindow(gameId: gameId)
-        } defaultValue: {
-            -1
+        // standalone game windows (⌘-double-click): a game out of one of
+        // the open files, or a blank board
+        WindowGroup(id: "game", for: GameRef.self) { $ref in
+            GameWindow(ref: ref ?? GameRef(path: nil, id: -1))
+        }
+    }
+}
+
+/// A game in a file: what a standalone game window is opened with.
+struct GameRef: Codable, Hashable {
+    /// Path of the file's window; nil = a scratch board with no file.
+    var path: String?
+    var id: Int64
+}
+
+/// Opens files as windows/tabs from places that have no SwiftUI
+/// environment — the app delegate, the tab bar's "+", the standalone game
+/// window. The first main window hands over `openWindow`; until then
+/// requests queue and are replayed when it appears.
+@MainActor
+final class FileOpener {
+    static let shared = FileOpener()
+    private var opener: ((URL) -> Void)?
+    private var pending: [URL] = []
+    /// Files a window has been assigned, whether or not its store has
+    /// loaded yet. The registry of stores is not enough: SwiftUI applies a
+    /// window's value on the next update pass, and two opens of one file
+    /// in the same turn would both see an empty registry and both open.
+    private var claimed: Set<URL> = []
+
+    func install(_ open: @escaping (URL) -> Void) {
+        opener = open
+        let queued = pending
+        pending = []
+        for url in queued { self.open(url) }
+    }
+
+    /// Marks `url` as taken by a window. False if it already was.
+    @discardableResult
+    func claim(_ url: URL) -> Bool {
+        claimed.insert(DatabaseStore.canonical(url)).inserted
+    }
+
+    func release(_ url: URL) {
+        claimed.remove(DatabaseStore.canonical(url))
+    }
+
+    /// One file, one window: an open file's window comes forward instead.
+    func open(_ url: URL) {
+        let url = DatabaseStore.canonical(url)
+        if let existing = OpenStores.shared.store(for: url) {
+            existing.bringWindowForward()
+            return
+        }
+        guard claim(url) else { return } // a window is on its way to it
+        if let opener { opener(url) } else { pending.append(url) }
+    }
+
+    func chooseAndOpen() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.init(filenameExtension: "pgn") ?? .plainText, .plainText]
+        panel.allowsMultipleSelection = true
+        panel.message = "Each file opens in its own tab."
+        guard panel.runModal() == .OK else { return }
+        for url in panel.urls { open(url) }
+    }
+
+    func createAndOpen() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.init(filenameExtension: "pgn") ?? .plainText]
+        panel.nameFieldStringValue = "games.pgn"
+        panel.message = "Create a new, empty PGN file; it opens as a tab and games you enter are saved into it."
+        panel.prompt = "Create"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try DatabaseStore.createEmptyPgn(at: url)
+            open(url)
+        } catch {
+            NSAlert(error: error).runModal()
         }
     }
 }

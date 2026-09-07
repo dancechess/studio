@@ -15,8 +15,14 @@ General position and material search is explicitly **out of scope** — the
 only a per-file cache; saving writes back to the source file, atomically, with
 a `.pgn.bak` kept from before the session's first write. New files, manual game
 entry with a ChessBase-style save mask, delete, and per-game PGN export all
-round-trip through the same path. Recent files and the last game you were
-looking at are restored on launch.
+round-trip through the same path.
+
+**One window per file, as tabs.** Every `.pgn` you open gets its own window,
+and windows tab together the way Safari's do (drag them apart if you prefer
+windows). A file is opened once: opening it again brings its tab forward. Each
+tab keeps its own list, filter, selection and engine; only the front tab's
+engine runs. The files that were open come back as tabs on the next launch,
+each on the game you were looking at.
 
 **Board and notation.** Click or drag to move, promotion picker, a variation
 chooser when a move has several continuations, board flip, coordinates. The
@@ -90,14 +96,15 @@ game, which is what makes studies and tactics puzzles usable.
 - **Not notarized.** The released build is ad-hoc signed, so macOS quarantines
   it on first launch. See the install notes in the README.
 - **Apple Silicon only.** No Intel build.
-- **One file at a time is the supported path.** You can open several `.pgn`
-  files into one merged list, but saving is disabled for merged lists — there
-  is no defined file to write back to.
 - **A source file edited outside the app discards in-app edits.** Cache
-  freshness is a modification-time comparison; if the `.pgn` is newer, the
-  cache is rebuilt from it. Save before editing the file elsewhere.
-- **No multi-database management**, no cross-file search, no player or
-  tournament index, no position or material search.
+  freshness is a modification-time comparison made when the file is opened;
+  if the `.pgn` is newer, the cache is rebuilt from it. Save before editing
+  the file elsewhere — and with several tabs open for a long session, this
+  matters more than it used to. A file watcher is the next step.
+- **Nothing moves between tabs yet.** Copying games from one file to another
+  is the second half of the multi-file work.
+- **No cross-file search**, no player or tournament index, no position or
+  material search. A search is about one file — the tab it runs in.
 - **Analysis uses a fixed depth**; there is no time budget, no second
   engine, and no tablebases.
 - **Printing is the notation as shown**; there is no page layout to speak of
