@@ -36,6 +36,11 @@ struct MainWindow: View {
 
     /// Restoration runs once per launch, in whichever window appears first.
     @MainActor private static var restored = false
+    /// This window arrived empty after launch — the tab bar's "+" (or
+    /// Window ▸ New Tab), which SwiftUI answers by opening the group's
+    /// scene with no value. Such a window asks for a file the moment it
+    /// has an NSWindow, and closes itself if none is chosen.
+    @State private var wantsFile = false
     @State private var listController = GameListController()
     @State private var keyMonitor = KeyEventMonitor()
     @State private var mouseMonitor = KeyEventMonitor()
@@ -103,6 +108,7 @@ struct MainWindow: View {
                 closeSaver.attach(window: window, session: session)
                 store.window = window
                 attachWindow(window)
+                if wantsFile { askForFile() }
             }
         })
         .onChange(of: url, initial: true) {
@@ -114,7 +120,12 @@ struct MainWindow: View {
             // any window can open more; the newest to appear holds the
             // environment's openWindow
             FileOpener.shared.install { openWindow(value: $0) }
+            let launchWindow = !Self.restored
             restoreIfFirst()
+            if url == nil, !launchWindow {
+                wantsFile = true
+                if hostWindow != nil { askForFile() }
+            }
             // dev hook (like DCS_KEY_DEBUG): open the engine panel on
             // launch and jump to the game's end so smoke runs can screenshot
             // live analysis without pressing ⌘E (engine idles at the root)
@@ -128,7 +139,8 @@ struct MainWindow: View {
             }
             // dev hook: open PGN(s) on launch, comma-separated — the first
             // into this window, the rest as further tabs
-            if url == nil, let paths = ProcessInfo.processInfo.environment["DCS_AUTO_OPEN"] {
+            if launchWindow, url == nil,
+               let paths = ProcessInfo.processInfo.environment["DCS_AUTO_OPEN"] {
                 let urls = paths.split(separator: ",").map { URL(fileURLWithPath: String($0)) }
                 if let first = urls.first, FileOpener.shared.claim(first) {
                     url = DatabaseStore.canonical(first)
@@ -145,6 +157,12 @@ struct MainWindow: View {
                     session.toEnd()
                     session.applyNag(1)
                     SavePrompt.save(session)
+                }
+            }
+            // dev hook: the tab bar's "+", sent the way the button sends it
+            if ProcessInfo.processInfo.environment["DCS_AUTO_PLUS"] != nil, url != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    NSApp.sendAction(#selector(NSResponder.newWindowForTab(_:)), to: nil, from: nil)
                 }
             }
             // dev hook: report the windows/tabs and engine states
@@ -604,6 +622,38 @@ struct MainWindow: View {
         // has already been pushed behind another by then must not keep
         // searching as if it were in front
         if !window.isKeyWindow { engine.suspend() }
+    }
+
+    /// "+" opened this window empty: offer a file; nothing chosen, no window.
+    private func askForFile() {
+        wantsFile = false
+        AppDelegate.trace("empty window from +: asking for a file")
+        let chosen: [URL]
+        if ProcessInfo.processInfo.environment["DCS_AUTO_PLUS_CANCEL"] != nil {
+            chosen = []                                       // the test's Cancel
+        } else if let pick = ProcessInfo.processInfo.environment["DCS_AUTO_PLUS_PICK"] {
+            chosen = [URL(fileURLWithPath: pick)]             // the test's Open
+        } else {
+            let panel = NSOpenPanel()
+            panel.allowedContentTypes = [UTType(filenameExtension: "pgn") ?? .plainText, .plainText]
+            panel.allowsMultipleSelection = true
+            panel.message = "Choose a PGN file for this tab."
+            chosen = panel.runModal() == .OK ? panel.urls : []
+        }
+        guard let first = chosen.first else {
+            hostWindow?.close()
+            return
+        }
+        if let open = OpenStores.shared.store(for: first) {
+            // already open elsewhere: that tab comes forward, this one goes
+            open.bringWindowForward()
+            hostWindow?.close()
+        } else if FileOpener.shared.claim(first) {
+            url = DatabaseStore.canonical(first)
+        } else {
+            hostWindow?.close()
+        }
+        for more in chosen.dropFirst() { FileOpener.shared.open(more) }
     }
 
     /// The files open last time come back as tabs — the first into this

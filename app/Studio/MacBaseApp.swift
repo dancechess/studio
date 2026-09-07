@@ -140,11 +140,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// The "+" in the tab bar (and Window ▸ New Tab): the same as ⌘O.
-    @objc func newWindowForTab(_ sender: Any?) {
-        MainActor.assumeIsolated { FileOpener.shared.chooseAndOpen() }
-    }
-
     /// Quit-time rescue for unsaved database games (one alert for all of
     /// them; each window's own willClose saver is suppressed afterwards).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
