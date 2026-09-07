@@ -63,7 +63,7 @@ struct NotationView: NSViewRepresentable {
     @MainActor
     final class Coordinator: NSObject {
         var version = -1
-        var figurines = true
+        var figurines = false
         var nodeRanges: [UInt32: NSRange] = [:]
         var highlighted: NSRange?
         weak var session: GameSession?
@@ -185,7 +185,7 @@ struct NotationView: NSViewRepresentable {
         return out
     }
 
-    static func buildAttributed(_ tokens: [NotationToken], figurines: Bool = true,
+    static func buildAttributed(_ tokens: [NotationToken], figurines: Bool = false,
                                 fenAt: (UInt32) -> String?) -> (NSAttributedString, [UInt32: NSRange]) {
         let text = NSMutableAttributedString()
         var ranges: [UInt32: NSRange] = [:]

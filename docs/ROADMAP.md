@@ -82,8 +82,9 @@ NAG `$220`, the ChessBase convention, so it round-trips. File ▸ Print Game… 
 Export Game as PDF… lay out a title block and the notation exactly as the
 panel shows it, diagrams included.
 
-**Figurines.** ♘f3 in the panel and on paper, letters in the file
-(Game ▸ Figurine Notation to switch). Null moves (`--`) parse, replay, and
+**Figurines.** Letters (Nf3) by default, as ChessBase shows them; Game ▸
+Figurine Notation switches the panel and print to ♘f3. The file always keeps
+letters. Null moves (`--`) parse, replay, and
 round-trip, so analysis PGNs from other tools open whole.
 
 **Novelties.** With the reference panel open, a move that does not appear from

@@ -24,7 +24,7 @@ coaches on macOS. Part of the DanceChess family.
 - **Whole-game analysis** (⌥⌘A) — marks the losing moves `?! ? ??` for both
   sides or one, main line or every variation; writes what the eval did,
   inserts the engine's line beside each; one undo step.
-- **Figurines and novelties** — ♘f3 on screen and paper; the reference panel
+- **Figurines and novelties** — ♘f3 on screen and paper if you want it (letters by default); the reference panel
   flags a move the chosen book has never seen and can write the `N` mark.
 - **Merge games** — select several rows; the first game's tree takes the
   others as variations, comments included.

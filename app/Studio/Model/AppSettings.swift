@@ -81,8 +81,9 @@ final class AppSettings {
     var referenceSource: ReferenceSource {
         didSet { UserDefaults.standard.set(referenceSource.rawValue, forKey: Self.sourceKey) }
     }
-    /// ♘f3 rather than Nf3 in the notation panel and on paper. On by
-    /// default, as in ChessBase; the PGN itself always keeps letters.
+    /// ♘f3 rather than Nf3 in the notation panel and on paper. Off by
+    /// default — ChessBase shows letters, and that is what its users read;
+    /// the PGN itself always keeps letters either way.
     var figurines: Bool {
         didSet { UserDefaults.standard.set(figurines, forKey: Self.figurinesKey) }
     }
@@ -122,7 +123,7 @@ final class AppSettings {
         lichessRatings = d.string(forKey: Self.ratingsKey) ?? "1600,1800,2000,2200,2500"
         lichessSpeeds = d.string(forKey: Self.speedsKey) ?? "blitz,rapid,classical"
         referenceSource = ReferenceSource(rawValue: d.string(forKey: Self.sourceKey) ?? "") ?? .database
-        figurines = d.object(forKey: Self.figurinesKey) as? Bool ?? true
+        figurines = d.object(forKey: Self.figurinesKey) as? Bool ?? false
         recentFiles = d.stringArray(forKey: Self.recentFilesKey) ?? []
         // first launch after the single-list days: the last list becomes the
         // first tab, so nothing the user had open goes missing
