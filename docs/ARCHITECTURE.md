@@ -32,7 +32,7 @@ more naturally expressed in Swift, so `UCIKit` owns it.
 | `notation.rs` | `notation_tokens()` — flattens the tree into the token stream the notation panel renders, including a `Diagram` token for NAG `$220`. The contract is in [NOTATION-VIEW.md](NOTATION-VIEW.md). |
 | `db.rs` | The `Database` object: streaming PGN import, paged and sorted game lists, one `GameFilter` (text, result, date range, Elo range, position) behind `query_games`/`count_games`, opening-tree aggregation, write-back to `.pgn`. |
 
-`cargo test` covers all of it (35 tests), including PGN round-trip fidelity —
+`cargo test` covers all of it (37 tests), including PGN round-trip fidelity —
 the property everything else leans on.
 
 ## The FFI contract
@@ -104,10 +104,20 @@ but line breaks and spacing become ours.
 
 ```sql
 games(id, white, black, white_elo, black_elo, result, event, site,
-      date, round, eco, ply_count, pgn)
+      date, round, eco, ply_count, pgn, signature)   -- INDEX(signature)
 
 positions(zobrist, game_id, move, result)      -- INDEX(zobrist)
 ```
+
+- `signature` is a hash of the start position and the main line's moves
+  (check/mate suffixes stripped) — what "the same game" means when copying
+  between files. Two files of one tournament disagree about the event's
+  name, how a player is spelled, sometimes who had White; the moves are the
+  one thing both copies got from the same scoresheet.
+- `PRAGMA user_version` carries the schema version. A cache from an older
+  layout is upgraded in place so it opens, and reports `needs_rebuild`; the
+  app clears and re-imports it — two seconds for 100k games, against the
+  alternative of query paths that tolerate every past layout.
 
 - `games.pgn` holds the **re-serialized** game, not the original text. Storing
   one canonical form means there is exactly one parse path on the way back out.
@@ -173,6 +183,13 @@ rendered by `BoardImage`, tagged with the move's node id like any other run.
 - `EngineSession` suspends when its window resigns key and resumes when it
   becomes key again, so several tabs with the panel open are one running
   search, not several.
+- Each store watches its file with a `DispatchSource` on the path. Its own
+  writes are told apart by the modification date recorded after each write;
+  an editor's save-by-rename swaps the inode under the descriptor, so a
+  rename/delete event re-arms the watch on the path. A reload detaches the
+  sessions holding this file's games first: after a re-import the ids are
+  file order again, and a session keeping an old id could save into a
+  different game.
 
 - `app/Package.swift` is a SwiftPM harness that builds and runs the whole app
   with only the Command Line Tools. `app/project.yml` (XcodeGen) is optional

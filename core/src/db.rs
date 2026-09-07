@@ -2,7 +2,7 @@ use std::sync::Mutex;
 use std::time::Instant;
 
 use pgn_reader::BufferedReader;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use shakmaty::fen::Fen;
 use shakmaty::san::San;
 use shakmaty::zobrist::{Zobrist64, ZobristHash};
@@ -13,6 +13,12 @@ use crate::{ChessError, START_FEN};
 
 /// Opening-tree positions are indexed for the first N plies of each game.
 const TREE_MAX_PLY: usize = 60;
+
+/// Bumped when the cache's shape changes. A cache built by an older
+/// version reports `needs_rebuild`, and the app re-imports the PGN — two
+/// seconds for 100k games, against the alternative of code paths that
+/// tolerate every past layout.
+const SCHEMA_VERSION: i64 = 2;
 
 const RESULT_WHITE: i64 = 0;
 const RESULT_DRAW: i64 = 1;
@@ -93,6 +99,26 @@ pub struct GameFilter {
 #[derive(uniffi::Object)]
 pub struct Database {
     conn: Mutex<Connection>,
+    /// The file predates the current schema: rows lack what the new
+    /// columns hold, so the caller should clear and re-import.
+    stale: bool,
+}
+
+/// What makes two games "the same game": the start position and the
+/// moves of the main line, nothing else. Two files of one tournament
+/// disagree about the event's name, how a name is spelled and sometimes
+/// who had White; the moves are the one thing both copies got from the
+/// same scoresheet. Check and mate suffixes are stripped, since one copy
+/// may write them and another not.
+fn signature(game: &crate::game::GameInner) -> i64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    let root: String = game.root_fen.split_whitespace().take(4).collect::<Vec<_>>().join(" ");
+    root.hash(&mut h);
+    for san in game.mainline_sans() {
+        san.trim_end_matches(['+', '#']).hash(&mut h);
+    }
+    h.finish() as i64
 }
 
 fn db_err(e: impl std::fmt::Display) -> ChessError {
@@ -220,7 +246,8 @@ impl Database {
                  round TEXT NOT NULL DEFAULT '',
                  eco TEXT NOT NULL DEFAULT '',
                  ply_count INTEGER NOT NULL DEFAULT 0,
-                 pgn TEXT NOT NULL
+                 pgn TEXT NOT NULL,
+                 signature INTEGER
              );
              CREATE TABLE IF NOT EXISTS positions (
                  zobrist INTEGER NOT NULL,
@@ -231,9 +258,63 @@ impl Database {
              CREATE INDEX IF NOT EXISTS idx_positions_zobrist ON positions(zobrist);",
         )
         .map_err(db_err)?;
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .map_err(db_err)?;
+        let games: i64 = conn
+            .query_row("SELECT count(*) FROM games", [], |r| r.get(0))
+            .map_err(db_err)?;
+        // a cache from before the signature column: add it so the file
+        // opens, and say the rows need re-importing to fill it
+        let stale = version < SCHEMA_VERSION && games > 0;
+        if version < SCHEMA_VERSION {
+            let has_signature: bool = conn
+                .prepare("PRAGMA table_info(games)")
+                .map_err(db_err)?
+                .query_map([], |r| r.get::<_, String>(1))
+                .map_err(db_err)?
+                .filter_map(Result::ok)
+                .any(|c| c == "signature");
+            if !has_signature {
+                conn.execute_batch("ALTER TABLE games ADD COLUMN signature INTEGER;")
+                    .map_err(db_err)?;
+            }
+            conn.pragma_update(None, "user_version", SCHEMA_VERSION)
+                .map_err(db_err)?;
+        }
+        // only once the column is certain to exist
+        conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_games_signature ON games(signature);")
+            .map_err(db_err)?;
         Ok(Database {
             conn: Mutex::new(conn),
+            stale,
         })
+    }
+
+    /// True when this cache was written by an older schema and should be
+    /// cleared and re-imported before use.
+    pub fn needs_rebuild(&self) -> bool {
+        self.stale
+    }
+
+    /// The id of a game already here with the same start position and
+    /// main line as `pgn`, if any — what Copy Games To checks so a game
+    /// copied twice lands once.
+    pub fn find_duplicate(&self, pgn: String) -> Result<Option<i64>, ChessError> {
+        let mut reader = BufferedReader::new(pgn.as_bytes());
+        let mut builder = GameBuilder::default();
+        let game = reader
+            .read_game(&mut builder)
+            .map_err(db_err)?
+            .ok_or_else(|| db_err("empty PGN"))?;
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT id FROM games WHERE signature = ?1 ORDER BY id LIMIT 1",
+            [signature(&game)],
+            |r| r.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(db_err)
     }
 
     /// Streams every game of a PGN file into the database.
@@ -508,7 +589,8 @@ impl Database {
         let updated = tx
             .execute(
                 "UPDATE games SET white=?1, black=?2, white_elo=?3, black_elo=?4, result=?5,
-                 event=?6, site=?7, date=?8, round=?9, eco=?10, ply_count=?11, pgn=?12
+                 event=?6, site=?7, date=?8, round=?9, eco=?10, ply_count=?11, pgn=?12,
+                 signature=?14
                  WHERE id=?13",
                 params![
                     h("White"),
@@ -524,6 +606,7 @@ impl Database {
                     game.mainline_sans().len() as i64,
                     game.write_pgn(),
                     id,
+                    signature(&game),
                 ],
             )
             .map_err(db_err)?;
@@ -628,8 +711,8 @@ fn insert_game(tx: &rusqlite::Transaction, game: &crate::game::GameInner) -> Res
     let elo = |key: &str| -> Option<u32> { h(key).parse().ok() };
     let result = h("Result");
     tx.execute(
-        "INSERT INTO games (white, black, white_elo, black_elo, result, event, site, date, round, eco, ply_count, pgn)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+        "INSERT INTO games (white, black, white_elo, black_elo, result, event, site, date, round, eco, ply_count, pgn, signature)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         params![
             h("White"),
             h("Black"),
@@ -643,6 +726,7 @@ fn insert_game(tx: &rusqlite::Transaction, game: &crate::game::GameInner) -> Res
             h("ECO"),
             game.mainline_sans().len() as i64,
             game.write_pgn(),
+            signature(game),
         ],
     )
     .map_err(db_err)?;
@@ -1026,6 +1110,51 @@ mod tests {
         for r in ["1-0", "0-1", "1/2-1/2", "*"] {
             assert!(results.contains(r), "fixture lacks a {r} game");
         }
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn a_duplicate_is_the_same_moves_not_the_same_headers() {
+        let (db, path) = temp_db();
+        import_str(&db, TWO_GAMES);
+        // same moves, every header different, a mate suffix written differently
+        let copy = "[Event \"elsewhere\"]\n[White \"A. Lice\"]\n[Black \"B\"]\n[Result \"*\"]\n\n1. e4 e5 2. Nf3 Nc6 *";
+        assert_eq!(db.find_duplicate(copy.into()).unwrap(), Some(1));
+        // one move different: not a duplicate
+        assert_eq!(db.find_duplicate("1. e4 e5 2. Nf3 Nf6 *".into()).unwrap(), None);
+        // a game edited in place keeps its signature current
+        db.update_game(1, "1. d4 d5 2. c4 *".into()).unwrap();
+        assert_eq!(db.find_duplicate("1. d4 d5 2. c4 *".into()).unwrap(), Some(1));
+        assert_eq!(db.find_duplicate("1. e4 e5 2. Nf3 Nc6 *".into()).unwrap(), None);
+        assert!(!db.needs_rebuild());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn a_cache_from_the_old_schema_asks_to_be_rebuilt() {
+        let path = std::env::temp_dir().join(format!(
+            "dcstudio-test-{}-{}.db", std::process::id(), unique()));
+        let _ = std::fs::remove_file(&path);
+        {
+            // hand-made old cache: no signature column, no user_version, one row
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE games (id INTEGER PRIMARY KEY, white TEXT NOT NULL DEFAULT '',
+                 black TEXT NOT NULL DEFAULT '', white_elo INTEGER, black_elo INTEGER,
+                 result TEXT NOT NULL DEFAULT '*', event TEXT NOT NULL DEFAULT '',
+                 site TEXT NOT NULL DEFAULT '', date TEXT NOT NULL DEFAULT '',
+                 round TEXT NOT NULL DEFAULT '', eco TEXT NOT NULL DEFAULT '',
+                 ply_count INTEGER NOT NULL DEFAULT 0, pgn TEXT NOT NULL);
+                 INSERT INTO games (pgn) VALUES ('1. e4 *');").unwrap();
+        }
+        let db = Database::open(path.to_string_lossy().into()).unwrap();
+        assert!(db.needs_rebuild(), "old rows have no signature");
+        // after a rebuild the same file is current
+        db.clear_all().unwrap();
+        import_str(&db, TWO_GAMES);
+        let again = Database::open(path.to_string_lossy().into()).unwrap();
+        assert!(!again.needs_rebuild());
+        assert_eq!(again.find_duplicate("1. e4 e5 2. Nf3 Nc6 *".into()).unwrap(), Some(1));
         let _ = std::fs::remove_file(path);
     }
 }
