@@ -1,0 +1,55 @@
+name: CI
+
+# Every pull request and every push to main: the Rust tests, the Swift
+# build against freshly generated bindings, and the end-to-end smoke run
+# with a real Stockfish. Same machine and setup as the release workflow, so
+# a green check here means the release build will get through too.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          command -v cargo || curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+            | sh -s -- -y --default-toolchain stable --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            core/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('core/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      # StudioSmoke drives a real engine; the bridge checks run without it
+      - name: Install Stockfish
+        run: brew install stockfish
+
+      - name: Test the core
+        run: cargo test --manifest-path core/Cargo.toml --release
+
+      - name: Build the core and generate bindings
+        run: ./scripts/build-core.sh
+
+      - name: Build the app (SwiftPM, no Xcode)
+        run: swift build --package-path app
+
+      - name: Smoke test (bridge + UCI)
+        run: swift run --package-path app StudioSmoke
