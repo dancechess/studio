@@ -149,6 +149,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// them; each window's own willClose saver is suppressed afterwards).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         MainActor.assumeIsolated {
+            Self.trace("shouldTerminate")
+            // what is open now is what comes back next time; the windows
+            // closing after this must not edit the list
+            OpenStores.shared.freezeForQuit()
             let dirty = GameSession.SessionRegistry.shared.modified
             guard !dirty.isEmpty else { return .terminateNow }
             let alert = NSAlert()
@@ -170,6 +174,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             default:
                 return .terminateCancel
             }
+        }
+    }
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        Self.trace("willFinishLaunching")
+        // dev hook: a real quit (⌘Q path) after N seconds, so a test can
+        // exercise the restore list the way a user's session ends
+        if let secs = ProcessInfo.processInfo.environment["DCS_AUTO_QUIT"].flatMap(Double.init) {
+            Self.trace("auto-quit armed \(secs)s")
+            DispatchQueue.main.asyncAfter(deadline: .now() + secs) {
+                Self.trace("terminate requested")
+                NSApp.terminate(nil)
+            }
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        Self.trace("willTerminate")
+    }
+
+    /// DCS_TRACE=<file>: lifecycle breadcrumbs (stdout dies with the process).
+    static func trace(_ what: String) {
+        guard let path = ProcessInfo.processInfo.environment["DCS_TRACE"] else { return }
+        if let h = FileHandle(forWritingAtPath: path) {
+            h.seekToEndOfFile(); h.write(Data((what + "\n").utf8)); h.closeFile()
+        } else {
+            try? (what + "\n").write(toFile: path, atomically: true, encoding: .utf8)
         }
     }
 }

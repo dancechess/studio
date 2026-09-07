@@ -357,15 +357,28 @@ final class OpenStores {
 
     var all: [DatabaseStore] { boxes.compactMap(\.store) }
 
+    /// Set when the app is quitting: the windows close one by one from
+    /// here on, and each one leaving must not shrink the restore list —
+    /// that is exactly the set the next launch should bring back. Found
+    /// the hard way: a headless test that killed the process restored
+    /// fine, and a real ⌘Q came back to nothing.
+    private(set) var quitting = false
+
+    func freezeForQuit() {
+        persist()
+        quitting = true
+    }
+
     func register(_ store: DatabaseStore) {
         boxes.removeAll { $0.store == nil || $0.store === store }
         boxes.append(WeakBox(store: store))
         persist()
     }
 
+    /// A window closed. During a quit the list is already frozen.
     func unregister(_ store: DatabaseStore) {
         boxes.removeAll { $0.store == nil || $0.store === store }
-        persist()
+        if !quitting { persist() }
     }
 
     /// The store showing `url`, if any window has it.
