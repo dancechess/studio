@@ -45,6 +45,9 @@ struct GameListView: NSViewRepresentable {
     let onDeleteRequest: ((Int64) -> Void)?
     /// Right-click with several rows selected → Merge Selected Games.
     var onMergeRequest: (([Int64]) -> Void)? = nil
+    /// The game to land on when the list first fills (the one last viewed
+    /// in this file); nil = row 0.
+    var initialSelection: Int64? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(view: self) }
 
@@ -157,23 +160,22 @@ struct GameListView: NSViewRepresentable {
         /// Quiets delegate callbacks during programmatic re-selection.
         private var reselecting = false
         private var didInitialSelect = false
-        /// Startup-only: restore the last-viewed game once, then never again
-        /// (a replaced list must not inherit it).
-        private var pendingInitialId: Int64? = UserDefaults.standard
-            .object(forKey: DatabaseStore.lastSelectedGameKey) as? Int64
+        /// Consumed once, when the list first fills.
+        private var pendingInitialId: Int64?
 
         init(view: GameListView) {
             self.view = view
             self.count = view.count
             self.revision = view.revision
             self.generation = view.generation
+            self.pendingInitialId = view.initialSelection
         }
 
         func resetForNewList() {
             selectedId = nil
             selectedRow = -1
             didInitialSelect = false
-            pendingInitialId = nil // only the startup list restores it
+            pendingInitialId = view.initialSelection
         }
 
         func deselectQuietly() {

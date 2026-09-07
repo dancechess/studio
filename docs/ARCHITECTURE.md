@@ -78,7 +78,17 @@ cache removes a whole class of invalidation bugs.
 
 DC Studio does not own your games. Opening a `.pgn` imports it into a SQLite
 cache under `Application Support/DCStudio/caches/`, one database per file,
-keyed by the file's path. The cache is considered fresh when its modification
+keyed by the file's canonical path.
+
+**One file, one window, one `DatabaseStore`.** The store is not a singleton:
+each window owns the store for its file, and `OpenStores` lists the live
+ones (weakly). That is what makes the write-back safe with several files
+open — a file in two windows would be two caches regenerating the whole file
+over each other, so `FileOpener` refuses the second open and brings the
+first window forward. The check is a *claim* made the moment a window is
+assigned a file, not a lookup of loaded stores: SwiftUI applies a window's
+value on the next update pass, and two opens in one turn would otherwise
+both see an empty registry. The cache is considered fresh when its modification
 time is at or after every source file's — so edits made inside the app survive
 across launches, while a `.pgn` modified by another program forces a rebuild.
 
@@ -150,6 +160,19 @@ panel's attributed string with a title block in front, laid into an
 rendered by `BoardImage`, tagged with the move's node id like any other run.
 
 ## The Swift side
+
+- Windows are a `WindowGroup(for: URL.self)`: the value is the file. Native
+  tabbing (`tabbingMode = .preferred`, one `tabbingIdentifier`) groups them;
+  since SwiftUI has already shown a new window by the time AppKit hands it
+  over, joining the group is done by hand with `addTabbedWindow`. The
+  window SwiftUI opens at launch has no value; the first `MainWindow` to
+  appear restores the previous session into it and opens the rest as tabs.
+- `FileOpener` is how code without a SwiftUI environment (the app delegate,
+  the tab bar's "+", a standalone game window) opens files: the newest main
+  window lends it `openWindow`.
+- `EngineSession` suspends when its window resigns key and resumes when it
+  becomes key again, so several tabs with the panel open are one running
+  search, not several.
 
 - `app/Package.swift` is a SwiftPM harness that builds and runs the whole app
   with only the Command Line Tools. `app/project.yml` (XcodeGen) is optional

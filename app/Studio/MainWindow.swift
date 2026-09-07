@@ -17,17 +17,35 @@ import DanceChessCore
 /// Leaving a modified game prompts to save (ChessBase style; update_game
 /// writes back through Rust).
 struct MainWindow: View {
-    @State private var store = DatabaseStore.shared
+    /// The file this window shows. nil only for the window SwiftUI opens
+    /// at launch before anything is restored into it.
+    @Binding var url: URL?
+    @State private var store: DatabaseStore
     @State private var session = GameSession()
     @State private var engine = EngineSession()
-    @State private var tree = OpeningTreeModel()
+    @State private var tree: OpeningTreeModel
+    @State private var keyObservers: [NSObjectProtocol] = []
     @State private var engaged = false
+
+    init(url: Binding<URL?>) {
+        _url = url
+        let store = DatabaseStore()
+        _store = State(initialValue: store)
+        _tree = State(initialValue: OpeningTreeModel(store: store))
+    }
+
+    /// Restoration runs once per launch, in whichever window appears first.
+    @MainActor private static var restored = false
+    /// This window arrived empty after launch — the tab bar's "+" (or
+    /// Window ▸ New Tab), which SwiftUI answers by opening the group's
+    /// scene with no value. Such a window asks for a file the moment it
+    /// has an NSWindow, and closes itself if none is chosen.
+    @State private var wantsFile = false
     @State private var listController = GameListController()
     @State private var keyMonitor = KeyEventMonitor()
     @State private var mouseMonitor = KeyEventMonitor()
     @State private var closeSaver = WindowCloseSaver()
     @State private var hostWindow: NSWindow?
-    @State private var showImporter = false
     @State private var showSaveSheet = false
     @State private var showSetupSheet = false
     @State private var showAnalyzeSheet = false
@@ -67,7 +85,7 @@ struct MainWindow: View {
                     onSelect: { loadSelected($0) },
                     onActivate: { id, commandKey in
                         if commandKey {
-                            openWindow(id: "game", value: id)
+                            openWindow(id: "game", value: GameRef(path: store.sourceURL?.path, id: id))
                         } else if store.canWriteBack {
                             // the row is already selected & loaded — edit it
                             showSaveSheet = true
@@ -76,7 +94,8 @@ struct MainWindow: View {
                         }
                     },
                     onDeleteRequest: { confirmAndDelete($0) },
-                    onMergeRequest: { mergeGames($0) }
+                    onMergeRequest: { mergeGames($0) },
+                    initialSelection: store.lastSelectedGameId
                 )
                 Divider()
                 statusBar
@@ -87,10 +106,26 @@ struct MainWindow: View {
             if hostWindow !== window {
                 hostWindow = window
                 closeSaver.attach(window: window, session: session)
+                store.window = window
+                attachWindow(window)
+                if wantsFile { askForFile() }
             }
         })
+        .onChange(of: url, initial: true) {
+            if let url { store.load(url) }
+        }
         .onAppear {
+            session.store = store
             keyMonitor.install { handleKey($0) }
+            // any window can open more; the newest to appear holds the
+            // environment's openWindow
+            FileOpener.shared.install { openWindow(value: $0) }
+            let launchWindow = !Self.restored
+            restoreIfFirst()
+            if url == nil, !launchWindow {
+                wantsFile = true
+                if hostWindow != nil { askForFile() }
+            }
             // dev hook (like DCS_KEY_DEBUG): open the engine panel on
             // launch and jump to the game's end so smoke runs can screenshot
             // live analysis without pressing ⌘E (engine idles at the root)
@@ -102,10 +137,46 @@ struct MainWindow: View {
                     }
                 }
             }
-            // dev hook: open a PGN on launch (exercises the cache path
-            // end-to-end without driving the file dialog)
-            if let path = ProcessInfo.processInfo.environment["DCS_AUTO_OPEN"] {
-                store.openPgn([URL(fileURLWithPath: path)])
+            // dev hook: open PGN(s) on launch, comma-separated — the first
+            // into this window, the rest as further tabs
+            if launchWindow, url == nil,
+               let paths = ProcessInfo.processInfo.environment["DCS_AUTO_OPEN"] {
+                let urls = paths.split(separator: ",").map { URL(fileURLWithPath: String($0)) }
+                if let first = urls.first, FileOpener.shared.claim(first) {
+                    url = DatabaseStore.canonical(first)
+                }
+                for more in urls.dropFirst() { FileOpener.shared.open(more) }
+            }
+            // dev hook: edit + save game 1 of THIS window's file (the save
+            // must touch this file and no other open one)
+            if let which = ProcessInfo.processInfo.environment["DCS_AUTO_TAB_SAVE"],
+               url?.lastPathComponent == which {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                    guard let pgn = store.pgn(for: 1) else { return }
+                    session.loadPgn(pgn, sourceId: 1)
+                    session.toEnd()
+                    session.applyNag(1)
+                    SavePrompt.save(session)
+                }
+            }
+            // dev hook: the tab bar's "+", sent the way the button sends it
+            if ProcessInfo.processInfo.environment["DCS_AUTO_PLUS"] != nil, url != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    NSApp.sendAction(#selector(NSResponder.newWindowForTab(_:)), to: nil, from: nil)
+                }
+            }
+            // dev hook: report the windows/tabs and engine states
+            if let out = ProcessInfo.processInfo.environment["DCS_AUTO_TABS_OUT"], url != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    let windows = NSApp.windows.filter { $0.tabbingIdentifier == "dcstudio-database" && $0.isVisible }
+                    var text = "windows: \(windows.count)\n"
+                    for w in windows {
+                        text += "  \(w.title) tabbed=\(w.tabbedWindows?.count ?? 0) key=\(w.isKeyWindow)\n"
+                    }
+                    text += "open files: \(OpenStores.shared.all.compactMap { $0.sourceURL?.lastPathComponent })\n"
+                    text += "restore list: \(AppSettings.shared.openFiles.map { ($0 as NSString).lastPathComponent })\n"
+                    try? text.write(toFile: out, atomically: true, encoding: .utf8)
+                }
             }
             // dev hook: pop the game-info sheet (layout screenshots)
             if ProcessInfo.processInfo.environment["DCS_AUTO_INFO"] != nil {
@@ -275,10 +346,8 @@ struct MainWindow: View {
                 if engine.panelVisible { toggleEngine() }
             }
         }
-        .navigationTitle(store.sourceName.map { "DC Studio — \($0)" } ?? "DC Studio")
+        .navigationTitle(store.sourceName ?? "DC Studio")
         .focusedSceneValue(\.windowActions, WindowActions(
-            openPgn: { showImporter = true },
-            newPgnFile: { newPgnFile() },
             newGame: { newGame() },
             save: { saveGame() },
             gameInfo: { showSaveSheet = true },
@@ -293,31 +362,21 @@ struct MainWindow: View {
             insertDiagram: { session.toggleDiagram() },
             printGame: { GamePrinter.print(session) },
             exportPdf: { GamePrinter.exportPdf(session) },
-            mergeGames: { mergeGames(listController.selectedGameIds) },
-            openRecent: { path in
-                guard confirmLeaveGame() else { return }
-                store.openPgn([URL(fileURLWithPath: path)])
-            },
-            clearRecents: { store.clearRecents() },
-            recentFiles: store.recentFiles
+            mergeGames: { mergeGames(listController.selectedGameIds) }
         ))
-        // drag a .pgn from Finder onto the window to open it
+        // drag .pgn files from Finder onto the window: each opens as a tab
         .dropDestination(for: URL.self) { urls, _ in
             let pgns = urls.filter { $0.pathExtension.lowercased() == "pgn" }
-            guard !pgns.isEmpty, confirmLeaveGame() else { return false }
-            store.openPgn(pgns)
+            guard !pgns.isEmpty else { return false }
+            for url in pgns { FileOpener.shared.open(url) }
             return true
         }
         .toolbar {
             ToolbarItemGroup {
-                Button("Open PGN", systemImage: "folder") {
-                    showImporter = true
-                }
+                Button("Open PGN", systemImage: "folder") { FileOpener.shared.chooseAndOpen() }
                 .disabled(store.importing)
                 .help("Open a PGN file — its games replace the current list")
-                Button("New PGN", systemImage: "doc.badge.plus") {
-                    newPgnFile()
-                }
+                Button("New PGN", systemImage: "doc.badge.plus") { FileOpener.shared.createAndOpen() }
                 .disabled(store.importing)
                 .help("Create a new, empty PGN file and open it as the list")
                 Button("New Game", systemImage: "plus.square") {
@@ -357,16 +416,14 @@ struct MainWindow: View {
                     .help("Go to the end of the line (End)")
             }
         }
-        .fileImporter(
-            isPresented: $showImporter,
-            allowedContentTypes: [UTType(filenameExtension: "pgn") ?? .plainText, .plainText],
-            allowsMultipleSelection: true
-        ) { result in
-            if case .success(let urls) = result {
-                // unsaved edits die with the replaced list — offer to save
-                guard confirmLeaveGame() else { return }
-                store.openPgn(urls)
-            }
+        .onDisappear {
+            keyMonitor.remove()
+            mouseMonitor.remove()
+            closeSaver.detach()
+            for o in keyObservers { NotificationCenter.default.removeObserver(o) }
+            engine.shutdown()
+            OpenStores.shared.unregister(store)
+            if let url { FileOpener.shared.release(url) }
         }
         .frame(minWidth: 860, minHeight: 600)
     }
@@ -534,8 +591,84 @@ struct MainWindow: View {
         guard id != session.sourceGameId else { return }
         if let pgn = store.pgn(for: id) {
             session.loadPgn(pgn, sourceId: id)
-            UserDefaults.standard.set(id, forKey: DatabaseStore.lastSelectedGameKey)
+            store.rememberSelected(id)
         }
+    }
+
+    /// Native tabs, and the engine yielding when the window is not key.
+    private func attachWindow(_ window: NSWindow?) {
+        guard let window else { return }
+        window.tabbingMode = .preferred
+        window.tabbingIdentifier = "dcstudio-database"
+        // SwiftUI has already shown the window on its own by the time we
+        // get it, so joining the tab group is done by hand: into whichever
+        // database window is in front (the restore sequence and ⌘O both
+        // land here)
+        if window.tabbedWindows == nil || window.tabbedWindows?.count == 1,
+           let anchor = NSApp.windows.first(where: {
+               $0 !== window && $0.isVisible && $0.tabbingIdentifier == "dcstudio-database"
+           }) {
+            anchor.addTabbedWindow(window, ordered: .above)
+        }
+        for o in keyObservers { NotificationCenter.default.removeObserver(o) }
+        let nc = NotificationCenter.default
+        keyObservers = [
+            nc.addObserver(forName: NSWindow.didResignKeyNotification, object: window,
+                           queue: .main) { _ in MainActor.assumeIsolated { engine.suspend() } },
+            nc.addObserver(forName: NSWindow.didBecomeKeyNotification, object: window,
+                           queue: .main) { _ in MainActor.assumeIsolated { engine.resume() } },
+        ]
+        // the observers arrive a beat after the window does; a window that
+        // has already been pushed behind another by then must not keep
+        // searching as if it were in front
+        if !window.isKeyWindow { engine.suspend() }
+    }
+
+    /// "+" opened this window empty: offer a file; nothing chosen, no window.
+    private func askForFile() {
+        wantsFile = false
+        AppDelegate.trace("empty window from +: asking for a file")
+        let chosen: [URL]
+        if ProcessInfo.processInfo.environment["DCS_AUTO_PLUS_CANCEL"] != nil {
+            chosen = []                                       // the test's Cancel
+        } else if let pick = ProcessInfo.processInfo.environment["DCS_AUTO_PLUS_PICK"] {
+            chosen = [URL(fileURLWithPath: pick)]             // the test's Open
+        } else {
+            let panel = NSOpenPanel()
+            panel.allowedContentTypes = [UTType(filenameExtension: "pgn") ?? .plainText, .plainText]
+            panel.allowsMultipleSelection = true
+            panel.message = "Choose a PGN file for this tab."
+            chosen = panel.runModal() == .OK ? panel.urls : []
+        }
+        guard let first = chosen.first else {
+            hostWindow?.close()
+            return
+        }
+        if let open = OpenStores.shared.store(for: first) {
+            // already open elsewhere: that tab comes forward, this one goes
+            open.bringWindowForward()
+            hostWindow?.close()
+        } else if FileOpener.shared.claim(first) {
+            url = DatabaseStore.canonical(first)
+        } else {
+            hostWindow?.close()
+        }
+        for more in chosen.dropFirst() { FileOpener.shared.open(more) }
+    }
+
+    /// The files open last time come back as tabs — the first into this
+    /// window (SwiftUI opened it empty), the rest through the opener.
+    private func restoreIfFirst() {
+        guard !Self.restored else { return }
+        Self.restored = true
+        guard url == nil,
+              ProcessInfo.processInfo.environment["DCS_AUTO_OPEN"] == nil else { return }
+        let files = AppSettings.shared.openFiles
+            .map { URL(fileURLWithPath: $0) }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+        guard let first = files.first, FileOpener.shared.claim(first) else { return }
+        url = DatabaseStore.canonical(first)
+        for more in files.dropFirst() { FileOpener.shared.open(more) }
     }
 
     private func confirmLeaveGame() -> Bool {
@@ -598,17 +731,6 @@ struct MainWindow: View {
         } else if session.hasMoves {
             showSaveSheet = true
         }
-    }
-
-    private func newPgnFile() {
-        guard confirmLeaveGame() else { return }
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [UTType(filenameExtension: "pgn") ?? .plainText]
-        panel.nameFieldStringValue = "games.pgn"
-        panel.message = "Create a new, empty PGN file — it becomes the open list, and games you enter are saved into it."
-        panel.prompt = "Create"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        store.createNewPgn(at: url)
     }
 
     // MARK: keyboard

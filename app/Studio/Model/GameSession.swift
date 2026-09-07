@@ -164,6 +164,9 @@ final class GameSession {
     }
     /// `games.id` this session was loaded from, or -1 for a scratch game.
     private(set) var sourceGameId: Int64 = -1
+    /// The list that game came from — where a save goes. Set by the
+    /// window that owns the session; nil for a board with no file behind it.
+    weak var store: DatabaseStore?
     /// Canonical PGN at load/save time; `isModified` compares against it, so
     /// there is no per-edit flag to keep in sync (games are small — cheap).
     private var baselinePgn = ""
@@ -610,14 +613,11 @@ final class GameSession {
             boxes.append(WeakBox(session: session))
         }
 
-        /// Live sessions with unsaved changes to a database game.
+        /// Live sessions with unsaved changes to a database game whose
+        /// file is still open (a closed file has nowhere to save to).
         var modified: [GameSession] {
-            boxes.compactMap(\.session).filter { $0.sourceGameId >= 0 && $0.isModified }
-        }
-
-        /// The opened list is being replaced: no session id is valid anymore.
-        func detachAll() {
-            for box in boxes { box.session?.detachFromDatabase() }
+            boxes.compactMap(\.session)
+                .filter { $0.sourceGameId >= 0 && $0.isModified && $0.store != nil }
         }
     }
 

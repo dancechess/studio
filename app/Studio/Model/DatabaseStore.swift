@@ -1,3 +1,4 @@
+import AppKit
 import CryptoKit
 import Foundation
 import Observation
@@ -5,19 +6,21 @@ import Observation
 import DanceChessCore
 #endif
 
-/// The PGN file is the source of truth; SQLite is a per-file speed cache
-/// (fast paging for 100k-game lists, opening-tree index). Opening a PGN
-/// replaces the list: each file (or multi-selection) gets its own cache db
-/// under `<Application Support>/DCStudio/caches/`, rebuilt only when the
-/// source file is newer than the cache. Edits (update_game) land in the
-/// cache — they survive reopen until the source PGN itself changes.
+/// One open PGN file: the list a window shows. The PGN is the source of
+/// truth; SQLite is a per-file speed cache (fast paging for 100k-game
+/// lists, opening-tree index) under `<Application Support>/DCStudio/caches/`,
+/// rebuilt only when the source file is newer than the cache. Edits
+/// (update_game) land in the cache and are written back to the file.
+///
+/// There is one of these per window, never shared: a file open in two
+/// places would be two caches writing the whole file over each other, so
+/// the app opens a file once and brings that window forward instead. The
+/// live ones are listed in `OpenStores`.
 @Observable
 @MainActor
 final class DatabaseStore {
-    static let shared = DatabaseStore()
-
     private(set) var db: Database?
-    /// Display name of what's open (file stem, "+N" for multi-selections).
+    /// Display name of what's open (the file stem).
     private(set) var sourceName: String?
     private(set) var gameCount: UInt64 = 0
     /// Bumped whenever the table must drop its page cache and reload
@@ -57,49 +60,50 @@ final class DatabaseStore {
         filteredCount = isFiltered ? ((try? db.countGames(filter: filter)) ?? 0) : gameCount
     }
 
-    /// Source PGN files behind the current list.
-    private(set) var sourceURLs: [URL] = []
+    /// The PGN file behind the list (nil = nothing open in this window).
+    private(set) var sourceURL: URL?
     private var cacheURL: URL?
 
-    /// Manual entry / write-back needs exactly one source file — a merged
-    /// multi-file list has no unambiguous home for a new game.
-    var canWriteBack: Bool { db != nil && sourceURLs.count == 1 }
+    var canWriteBack: Bool { db != nil && sourceURL != nil }
 
-    /// Recently opened PGN paths, newest first (File ▸ Open Recent).
-    private(set) var recentFiles: [String] = []
+    /// The window showing this list, for "that file is already open".
+    weak var window: NSWindow?
+
+    func bringWindowForward() {
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
 
     /// Source files already backed up this launch (one .bak per file per
-    /// run — a safety net for the whole-file write-back).
-    private var backedUpPaths: Set<String> = []
+    /// run — a safety net for the whole-file write-back). App-wide, since
+    /// the same file can be opened, closed and opened again.
+    private static var backedUpPaths: Set<String> = []
 
-    private static let lastCachePathKey = "lastCachePath"
-    private static let lastSourceNameKey = "lastSourceName"
-    private static let lastSourcePathsKey = "lastSourcePaths"
-    private static let recentFilesKey = "recentFiles"
-    static let lastSelectedGameKey = "lastSelectedGameId"
-
-    private init() {
+    init() {
         Self.migrateLegacyStorage()
-        // reopen the last cache so the app starts where it left off; the
-        // freshness check against sources only runs on an explicit Open
-        let defaults = UserDefaults.standard
-        if let path = defaults.string(forKey: Self.lastCachePathKey),
-           FileManager.default.fileExists(atPath: path) {
-            do {
-                let db = try Database.open(path: path)
-                self.db = db
-                cacheURL = URL(fileURLWithPath: path)
-                gameCount = (try? db.gameCount()) ?? 0
-                sourceName = defaults.string(forKey: Self.lastSourceNameKey)
-                sourceURLs = (defaults.stringArray(forKey: Self.lastSourcePathsKey) ?? [])
-                    .map { URL(fileURLWithPath: $0) }
-            } catch {
-                errorText = "Can't open cached list: \(error.localizedDescription)"
-            }
-        } else {
-            statusText = "Open a PGN file to begin"
-        }
-        recentFiles = defaults.stringArray(forKey: Self.recentFilesKey) ?? []
+        statusText = "Open a PGN file to begin"
+    }
+
+    /// The canonical form every path comparison uses: one file must be one
+    /// window whatever the spelling, and a symlink is the same file.
+    static func canonical(_ url: URL) -> URL {
+        url.standardizedFileURL.resolvingSymlinksInPath()
+    }
+
+    // MARK: per-file memory (the game you were looking at)
+
+    private var selectedGameKey: String? {
+        sourceURL.map { "selectedGame:\($0.path)" }
+    }
+
+    /// The game last viewed in this file, restored when the list opens.
+    var lastSelectedGameId: Int64? {
+        guard let key = selectedGameKey else { return nil }
+        return UserDefaults.standard.object(forKey: key) as? Int64
+    }
+
+    func rememberSelected(_ id: Int64) {
+        if let key = selectedGameKey { UserDefaults.standard.set(id, forKey: key) }
     }
 
     /// One-time move of the pre-rename storage directory (MacBase →
@@ -118,19 +122,6 @@ final class DatabaseStore {
     }
 
     func setStatus(_ text: String) { statusText = text }
-
-    func clearRecents() {
-        recentFiles = []
-        UserDefaults.standard.removeObject(forKey: Self.recentFilesKey)
-    }
-
-    private func rememberRecent(_ urls: [URL]) {
-        guard urls.count == 1, let path = urls.first?.path else { return }
-        var list = recentFiles.filter { $0 != path }
-        list.insert(path, at: 0)
-        recentFiles = Array(list.prefix(8))
-        UserDefaults.standard.set(recentFiles, forKey: Self.recentFilesKey)
-    }
 
     /// Synchronous paged fetch for the table's data source; SQLite with
     /// LIMIT/OFFSET is fast enough to stay on the main thread here.
@@ -229,7 +220,7 @@ final class DatabaseStore {
     /// Appends a manually entered game to the list and the source PGN.
     func addGame(pgn: String) throws -> Int64 {
         guard let db, canWriteBack else {
-            throw ChessError.Database(reason: "no single PGN file to save into")
+            throw ChessError.Database(reason: "no PGN file to save into")
         }
         let id = try db.addGame(pgn: pgn)
         try writeBack()
@@ -239,29 +230,24 @@ final class DatabaseStore {
         return id
     }
 
-    /// Creates an empty PGN file and opens it as the current (0-game) list.
-    func createNewPgn(at url: URL) {
-        do {
-            try Data().write(to: url)
-            openPgn([url])
-        } catch {
-            errorText = "Can't create file: \(error.localizedDescription)"
-        }
+    /// Creates an empty PGN file on disk (the caller then opens it).
+    static func createEmptyPgn(at url: URL) throws {
+        try Data().write(to: url)
     }
 
     /// Regenerates the source .pgn from the cache (atomic temp+rename in
     /// Rust), then touches the cache so it still reads as fresh.
     private func writeBack() throws {
-        guard let db, canWriteBack, let source = sourceURLs.first else { return }
+        guard let db, canWriteBack, let source = sourceURL else { return }
         let scoped = source.startAccessingSecurityScopedResource()
         defer { if scoped { source.stopAccessingSecurityScopedResource() } }
         // first write to this file this launch: keep a .bak of the original
-        if !backedUpPaths.contains(source.path),
+        if !Self.backedUpPaths.contains(source.path),
            FileManager.default.fileExists(atPath: source.path) {
             let bak = source.path + ".bak"
             try? FileManager.default.removeItem(atPath: bak)
             try? FileManager.default.copyItem(atPath: source.path, toPath: bak)
-            backedUpPaths.insert(source.path)
+            Self.backedUpPaths.insert(source.path)
         }
         try db.writePgnFile(path: source.path)
         if let cacheURL {
@@ -270,20 +256,23 @@ final class DatabaseStore {
         }
     }
 
-    /// Opens PGN file(s), replacing the current list. Reuses the file's
-    /// cache when it is newer than every source; otherwise rebuilds it.
-    func openPgn(_ urls: [URL]) {
-        guard !urls.isEmpty, !importing else { return }
+    /// Loads one PGN file into this (empty) store. Reuses the file's cache
+    /// when it is newer than the source; otherwise rebuilds it. A store
+    /// loads once: a window shows one file for its whole life.
+    func load(_ url: URL) {
+        guard sourceURL == nil, !importing else { return }
+        let url = Self.canonical(url)
         importing = true
         errorText = nil
-        // sessions still point at games of the previous list — their edits
-        // become scratch rather than writing into the wrong game
-        GameSession.SessionRegistry.shared.detachAll()
+        sourceURL = url
+        sourceName = url.deletingPathExtension().lastPathComponent
+        OpenStores.shared.register(self)
+        AppSettings.shared.rememberRecent(url)
         Task {
             var cacheURL: URL?
             do {
-                cacheURL = try Self.cacheURL(for: urls)
-                try await open(urls: urls, cacheURL: cacheURL!)
+                cacheURL = try Self.cacheURL(for: url)
+                try await open(url: url, cacheURL: cacheURL!)
             } catch {
                 // a half-built cache must not pass the next freshness check
                 if let cacheURL { try? FileManager.default.removeItem(at: cacheURL) }
@@ -294,17 +283,10 @@ final class DatabaseStore {
         }
     }
 
-    private func open(urls: [URL], cacheURL: URL) async throws {
-        let scopes = urls.map { ($0, $0.startAccessingSecurityScopedResource()) }
-        defer {
-            for (url, scoped) in scopes where scoped {
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
-        let name = urls.count == 1
-            ? urls[0].deletingPathExtension().lastPathComponent
-            : "\(urls[0].deletingPathExtension().lastPathComponent) +\(urls.count - 1)"
-        let fresh = Self.cacheIsFresh(cacheURL, sources: urls)
+    private func open(url: URL, cacheURL: URL) async throws {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        let fresh = Self.cacheIsFresh(cacheURL, source: url)
         let db = try Database.open(path: cacheURL.path)
         if fresh {
             self.db = db
@@ -313,61 +295,43 @@ final class DatabaseStore {
         } else {
             statusText = "Importing…"
             try await Self.runClear(db: db)
-            var imported: UInt32 = 0
-            var skipped: UInt32 = 0
-            var millis: UInt64 = 0
-            for url in urls {
-                let stats = try await Self.runImport(db: db, path: url.path)
-                imported += stats.imported
-                skipped += stats.skipped
-                millis += stats.millis
-            }
+            let stats = try await Self.runImport(db: db, path: url.path)
             self.db = db
             gameCount = (try? db.gameCount()) ?? 0
             statusText = String(format: "imported %d games (%d skipped) in %.1fs",
-                                imported, skipped, Double(millis) / 1000)
+                                stats.imported, stats.skipped, Double(stats.millis) / 1000)
         }
-        sourceName = name
-        sourceURLs = urls
         self.cacheURL = cacheURL
         filter = GameFilter(text: nil, result: nil, dateFrom: nil, dateTo: nil,
                             minElo: nil, maxElo: nil, fen: nil)
         filteredCount = gameCount
         generation += 1
         revision += 1
-        UserDefaults.standard.set(cacheURL.path, forKey: Self.lastCachePathKey)
-        UserDefaults.standard.set(name, forKey: Self.lastSourceNameKey)
-        UserDefaults.standard.set(urls.map(\.path), forKey: Self.lastSourcePathsKey)
-        rememberRecent(urls)
     }
 
-    /// One cache db per source selection, keyed by the full path set.
-    private static func cacheURL(for urls: [URL]) throws -> URL {
+    /// One cache db per source file, keyed by its canonical path.
+    private static func cacheURL(for url: URL) throws -> URL {
         let support = try FileManager.default
             .url(for: .applicationSupportDirectory, in: .userDomainMask,
                  appropriateFor: nil, create: true)
         let dir = support.appendingPathComponent("DCStudio/caches", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let key = urls.map(\.path).sorted().joined(separator: "\n")
-        let hex = SHA256.hash(data: Data(key.utf8))
+        let hex = SHA256.hash(data: Data(url.path.utf8))
             .prefix(8).map { String(format: "%02x", $0) }.joined()
-        let stem = urls[0].deletingPathExtension().lastPathComponent
+        let stem = url.deletingPathExtension().lastPathComponent
             .replacingOccurrences(of: "/", with: "-")
         return dir.appendingPathComponent("\(stem)-\(hex).db")
     }
 
-    /// Fresh = the cache file is newer than every source PGN. Edits keep
+    /// Fresh = the cache file is newer than the source PGN. Edits keep
     /// bumping the cache's mtime, so they never mark it stale themselves.
-    private static func cacheIsFresh(_ cache: URL, sources: [URL]) -> Bool {
+    private static func cacheIsFresh(_ cache: URL, source: URL) -> Bool {
         let fm = FileManager.default
         guard let attrs = try? fm.attributesOfItem(atPath: cache.path),
-              let cacheDate = attrs[.modificationDate] as? Date else { return false }
-        for url in sources {
-            guard let a = try? fm.attributesOfItem(atPath: url.path),
-                  let sourceDate = a[.modificationDate] as? Date,
-                  sourceDate <= cacheDate else { return false }
-        }
-        return true
+              let cacheDate = attrs[.modificationDate] as? Date,
+              let a = try? fm.attributesOfItem(atPath: source.path),
+              let sourceDate = a[.modificationDate] as? Date else { return false }
+        return sourceDate <= cacheDate
     }
 
     private nonisolated static func runClear(db: Database) async throws {
@@ -378,5 +342,53 @@ final class DatabaseStore {
         try await Task.detached(priority: .userInitiated) {
             try db.importPgnFile(path: path)
         }.value
+    }
+}
+
+
+/// The files open right now, one store each — what "open this file" checks
+/// before opening it again, what Copy Games To lists, and what is written
+/// down for the next launch. Weak, so a closed window drops out on its own.
+@MainActor
+final class OpenStores {
+    static let shared = OpenStores()
+    private struct WeakBox { weak var store: DatabaseStore? }
+    private var boxes: [WeakBox] = []
+
+    var all: [DatabaseStore] { boxes.compactMap(\.store) }
+
+    /// Set when the app is quitting: the windows close one by one from
+    /// here on, and each one leaving must not shrink the restore list —
+    /// that is exactly the set the next launch should bring back. Found
+    /// the hard way: a headless test that killed the process restored
+    /// fine, and a real ⌘Q came back to nothing.
+    private(set) var quitting = false
+
+    func freezeForQuit() {
+        persist()
+        quitting = true
+    }
+
+    func register(_ store: DatabaseStore) {
+        boxes.removeAll { $0.store == nil || $0.store === store }
+        boxes.append(WeakBox(store: store))
+        persist()
+    }
+
+    /// A window closed. During a quit the list is already frozen.
+    func unregister(_ store: DatabaseStore) {
+        boxes.removeAll { $0.store == nil || $0.store === store }
+        if !quitting { persist() }
+    }
+
+    /// The store showing `url`, if any window has it.
+    func store(for url: URL) -> DatabaseStore? {
+        let key = DatabaseStore.canonical(url)
+        return all.first { $0.sourceURL == key }
+    }
+
+    /// The open files, in window order, for restoring on the next launch.
+    private func persist() {
+        AppSettings.shared.openFiles = all.compactMap { $0.sourceURL?.path }
     }
 }

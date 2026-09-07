@@ -209,18 +209,18 @@ enum SavePrompt {
     static func run(for session: GameSession, canCancel: Bool) -> Bool {
         guard !suppressPrompts else { return true }
         let isNewGame = session.sourceGameId < 0
+        guard let store = session.store, store.canWriteBack else { return true }
         if isNewGame {
-            // scratch entry: worth rescuing only if it has moves and a
-            // single-file list to land in
-            guard session.hasMoves, DatabaseStore.shared.canWriteBack else { return true }
+            // scratch entry: worth rescuing only if it has moves
+            guard session.hasMoves else { return true }
         } else {
             guard session.isModified else { return true }
         }
         let alert = NSAlert()
         alert.messageText = "Unsaved Changes"
         alert.informativeText = isNewGame
-            ? "Save this new game into “\(DatabaseStore.shared.sourceName ?? "the list")”?"
-            : "Save the changes to “\(session.gameTitle)” to the database?"
+            ? "Save this new game into “\(store.sourceName ?? "the list")”?"
+            : "Save the changes to “\(session.gameTitle)” to “\(store.sourceName ?? "the list")”?"
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Don't Save")
         if canCancel { alert.addButton(withTitle: "Cancel") }
@@ -236,9 +236,12 @@ enum SavePrompt {
 
     @discardableResult
     static func save(_ session: GameSession) -> Bool {
+        guard let store = session.store else {
+            session.errorText = "This game's file is no longer open"
+            return false
+        }
         do {
-            try DatabaseStore.shared.updateGame(id: session.sourceGameId,
-                                                pgn: session.game.toPgn())
+            try store.updateGame(id: session.sourceGameId, pgn: session.game.toPgn())
             session.markSaved()
             return true
         } catch {
@@ -250,8 +253,12 @@ enum SavePrompt {
     /// Appends a newly entered (scratch) game to the open list + PGN file.
     @discardableResult
     static func appendNewGame(_ session: GameSession) -> Bool {
+        guard let store = session.store else {
+            session.errorText = "No open file to save into"
+            return false
+        }
         do {
-            let id = try DatabaseStore.shared.addGame(pgn: session.game.toPgn())
+            let id = try store.addGame(pgn: session.game.toPgn())
             session.attachToDatabase(id: id)
             return true
         } catch {

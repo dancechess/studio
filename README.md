@@ -8,7 +8,7 @@ coaches on macOS. Part of the DanceChess family.
 
 ## Features
 
-- **Single-window workflow** — board + notation on top, your game list below.
+- **One window per PGN, as tabs** — board + notation on top, that file's game list below; open files come back on launch.
   Arrow keys browse games and step through moves without ever touching the
   mouse; `Enter` dives into a game, `Esc` comes back.
 - **PGN is the source of truth** — open any .pgn and its games *are* the

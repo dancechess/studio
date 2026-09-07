@@ -97,6 +97,26 @@ final class EngineSession {
         setTarget(fen)
     }
 
+    /// The window went to the back (another tab, another window): stop
+    /// burning CPU on a board nobody is looking at. `resume` picks the
+    /// same position back up. Several open tabs with the panel on would
+    /// otherwise be several engines at full thread count each.
+    private(set) var suspended = false
+
+    func suspend() {
+        guard enabled, !suspended else { return }
+        suspended = true
+        enabled = false
+        engine?.stop()
+    }
+
+    func resume() {
+        guard suspended else { return }
+        suspended = false
+        enabled = panelVisible
+        if enabled { setTarget(currentFen.isEmpty ? nil : currentFen) }
+    }
+
     /// Stops analysis and tears the subprocess down (window closing).
     func shutdown() {
         enabled = false
