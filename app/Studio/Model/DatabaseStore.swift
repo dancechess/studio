@@ -290,9 +290,19 @@ final class DatabaseStore {
     private func open(url: URL, cacheURL: URL) async throws {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        // Decided BEFORE the database is opened: opening creates the file
+        // when it is missing, and a cache born a moment ago is newer than
+        // any source — every first-ever open then read as "fresh" and showed
+        // zero games. (Shipped in 0.2.0; fixed in 0.2.1.)
+        var fresh = Self.cacheIsFresh(cacheURL, source: url)
         let db = try Database.open(path: cacheURL.path)
-        // newer than the file, AND laid out the way this version expects
-        let fresh = Self.cacheIsFresh(cacheURL, source: url) && !db.needsRebuild()
+        // …AND laid out the way this version expects, AND actually holding
+        // the games — an empty cache beside a non-empty file is never fresh
+        if fresh, db.needsRebuild() { fresh = false }
+        if fresh, (try? db.gameCount()) ?? 0 == 0,
+           (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0 > 0 {
+            fresh = false
+        }
         if fresh {
             self.db = db
             gameCount = (try? db.gameCount()) ?? 0
