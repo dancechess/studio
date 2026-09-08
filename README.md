@@ -4,6 +4,11 @@
 a lightweight, PGN-native alternative to ChessBase, built for players and
 coaches on macOS. Part of the DanceChess family.
 
+Website: [dancechess.com/studio](https://dancechess.com/studio/) ·
+[Download](https://dancechess.com/download/) ·
+[Changelog](https://dancechess.com/changelog/) ·
+[vs ChessBase](https://dancechess.com/studio/vs-chessbase/)
+
 ![DC Studio](assets/screenshot.png)
 
 ## Features
