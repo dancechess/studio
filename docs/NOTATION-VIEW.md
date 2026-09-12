@@ -59,6 +59,33 @@ depth *n*:
   invalidates the stream: call it again and rebuild the text.
   **Navigation never requires a rebuild.**
 
+### Type
+
+One setting decides the whole look: a typeface and the size the main line is
+set in (Settings, ⌘,). Everything else is derived from that size rather than
+fixed, so the panel scales as a piece instead of drifting apart:
+
+| | |
+|---|---|
+| main line | the chosen size, semibold |
+| variations and comments | one point smaller |
+| `indentStep` | 1.25 × size |
+| line and paragraph spacing | 0.12 × and 0.25 × size |
+| engine lines, opening-tree rows | 2 points smaller (never below 11) |
+
+The faces on offer all ship with macOS, and two of them — New York and SF
+Mono — are asked for by *design* rather than by family name, because the
+system serif's real name is private and has changed between releases. A face
+that has to be downloaded is a face that silently renders as something else
+on the next Mac.
+
+The default is New York at 14pt: a serif made for reading, and two points up
+from where this started. The printed page (`document(for:)`) takes the same
+setting, so paper matches the screen.
+
+A size or face change invalidates the text the same way an edit does — the
+coordinator compares a `Style` value and rebuilds when it differs.
+
 ## 2. The NSTextView layer
 
 Not SwiftUI `Text`: this view needs flowing layout over tens of thousands of

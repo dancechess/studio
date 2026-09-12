@@ -98,15 +98,19 @@ struct EnginePanel: View {
         .padding(.vertical, 4)
     }
 
+    /// Engine lines are read in the same glance as the notation above
+    /// them, so they follow its size rather than a number of their own.
+    private var size: CGFloat { AppSettings.shared.panelFontSize }
+
     private var rows: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(engine.lines) { line in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(line.scoreText)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .frame(width: 52, alignment: .trailing)
+                        .font(.system(size: size, weight: .semibold, design: .monospaced))
+                        .frame(width: (52 * size / 12).rounded(), alignment: .trailing)
                     Text(line.text)
-                        .font(.system(size: 12))
+                        .font(.system(size: size))
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Spacer(minLength: 0)

@@ -17,6 +17,8 @@ struct NotationView: NSViewRepresentable {
     let session: GameSession
     /// Read in the parent's body so a toggle re-renders (see GameArea).
     var figurines: Bool = AppSettings.shared.figurines
+    var face: NotationFace = AppSettings.shared.notationFace
+    var size: CGFloat = AppSettings.shared.notationFontSize
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -47,11 +49,15 @@ struct NotationView: NSViewRepresentable {
         guard let textView = scroll.documentView as? NotationTextView else { return }
         let coordinator = context.coordinator
         coordinator.session = session
-        if coordinator.version != session.tokensVersion || coordinator.figurines != figurines {
+        let style = Style(face: face, size: size)
+        if coordinator.version != session.tokensVersion || coordinator.figurines != figurines
+            || coordinator.style != style {
             coordinator.version = session.tokensVersion
             coordinator.figurines = figurines
+            coordinator.style = style
             let game = session.game
             let (text, ranges) = Self.buildAttributed(session.tokens, figurines: figurines,
+                                                      style: style,
                                                       fenAt: { try? game.fenAt(id: $0) })
             coordinator.nodeRanges = ranges
             coordinator.highlighted = nil
@@ -64,6 +70,7 @@ struct NotationView: NSViewRepresentable {
     final class Coordinator: NSObject {
         var version = -1
         var figurines = false
+        var style = Style(face: .system, size: 0)
         var nodeRanges: [UInt32: NSRange] = [:]
         var highlighted: NSRange?
         weak var session: GameSession?
@@ -165,7 +172,38 @@ struct NotationView: NSViewRepresentable {
 
     // --- token stream -> attributed string (rendering contract) ---
 
-    private static let indentStep: CGFloat = 16
+    /// Everything the look of the panel depends on, in one value: the
+    /// typeface, the size the main line is set in, and the indent and
+    /// leading derived from that size. Derived rather than fixed, because a
+    /// 16pt variation indented by a 13pt step reads as a ragged margin.
+    struct Style: Equatable {
+        let face: NotationFace
+        let size: CGFloat
+
+        init(face: NotationFace, size: CGFloat) {
+            self.face = face
+            self.size = size
+        }
+
+        /// What the settings say right now. A `static let` here would be a
+        /// snapshot taken at first use, so a font change would never reach
+        /// the printed page.
+        @MainActor static var current: Style {
+            Style(face: AppSettings.shared.notationFace,
+                  size: AppSettings.shared.notationFontSize)
+        }
+
+        var indentStep: CGFloat { (size * 1.25).rounded() }
+        var lineSpacing: CGFloat { (size * 0.12).rounded() }
+        var paragraphSpacing: CGFloat { (size * 0.25).rounded() }
+
+        /// The main line carries the weight; variations and comments sit a
+        /// point below it so the eye finds the game before the analysis.
+        var move: NSFont { face.font(size: size, weight: .semibold) }
+        var variation: NSFont { face.font(size: size - 1) }
+        var comment: NSFont { face.font(size: size - 1) }
+    }
+
 
     /// Diagram size in the panel and on paper.
     static let diagramSize: CGFloat = 168
@@ -186,10 +224,11 @@ struct NotationView: NSViewRepresentable {
     }
 
     static func buildAttributed(_ tokens: [NotationToken], figurines: Bool = false,
+                                style: Style,
                                 fenAt: (UInt32) -> String?) -> (NSAttributedString, [UInt32: NSRange]) {
         let text = NSMutableAttributedString()
         var ranges: [UInt32: NSRange] = [:]
-        var paragraph = paragraphStyle(indent: 0)
+        var paragraph = paragraphStyle(indent: 0, style: style)
         var needSpace = false
 
         func append(_ string: String, _ attributes: [NSAttributedString.Key: Any]) -> NSRange {
@@ -214,11 +253,12 @@ struct NotationView: NSViewRepresentable {
             switch token.kind {
             case .paragraphBreak:
                 _ = append("\n", [:])
-                paragraph = paragraphStyle(indent: CGFloat(token.depth) * indentStep)
+                paragraph = paragraphStyle(indent: CGFloat(token.depth) * style.indentStep,
+                                           style: style)
                 needSpace = false
                 continue
             case .closeParen:
-                _ = append(")", variationAttributes(depth: token.depth))
+                _ = append(")", variationAttributes(depth: token.depth, style: style))
                 needSpace = true
                 continue
             default:
@@ -227,27 +267,27 @@ struct NotationView: NSViewRepresentable {
             if needSpace { _ = append(" ", [:]) }
             switch token.kind {
             case .openParen:
-                _ = append("(", variationAttributes(depth: token.depth))
+                _ = append("(", variationAttributes(depth: token.depth, style: style))
                 needSpace = false
             case .moveNumber:
-                var attrs = moveAttributes(depth: token.depth)
+                var attrs = moveAttributes(depth: token.depth, style: style)
                 attrs[.dcsNode] = tagged(token)
                 _ = append(token.text, attrs)
                 needSpace = true
             case .move:
-                var attrs = moveAttributes(depth: token.depth)
+                var attrs = moveAttributes(depth: token.depth, style: style)
                 attrs[.dcsNode] = tagged(token)
                 let range = append(figurines ? figurine(token.text) : token.text, attrs)
                 if let node = token.nodeId { ranges[node] = range }
                 needSpace = true
             case .nag:
-                var attrs = moveAttributes(depth: token.depth)
+                var attrs = moveAttributes(depth: token.depth, style: style)
                 attrs[.dcsNode] = tagged(token)
                 _ = append(token.text, attrs)
                 needSpace = true
             case .comment:
                 var attrs: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: 12),
+                    .font: style.comment,
                     .foregroundColor: NSColor.systemGreen,
                 ]
                 attrs[.dcsNode] = tagged(token)
@@ -276,14 +316,16 @@ struct NotationView: NSViewRepresentable {
 
     /// The game as a printable document: a title block, then the notation
     /// exactly as the panel shows it (diagrams included).
+    @MainActor
     static func document(for session: GameSession) -> NSAttributedString {
         let game = session.game
         let h = { (key: String) -> String in game.header(key: key) ?? "" }
+        let style = Style.current
         let doc = NSMutableAttributedString()
         let white = h("White"), black = h("Black")
         let title = black.isEmpty ? white : "\(white) – \(black)"
         doc.append(NSAttributedString(string: title.isEmpty ? "Game" : title, attributes: [
-            .font: NSFont.systemFont(ofSize: 17, weight: .bold),
+            .font: style.face.font(size: style.size + 4, weight: .bold),
             .foregroundColor: NSColor.labelColor,
         ]))
         let details = [h("Event"), h("Site"), h("Date"), h("Round").isEmpty ? "" : "round \(h("Round"))",
@@ -292,12 +334,13 @@ struct NotationView: NSViewRepresentable {
             .joined(separator: " · ")
         if !details.isEmpty {
             doc.append(NSAttributedString(string: "\n" + details, attributes: [
-                .font: NSFont.systemFont(ofSize: 11),
+                .font: style.face.font(size: style.size - 3),
                 .foregroundColor: NSColor.secondaryLabelColor,
             ]))
         }
         doc.append(NSAttributedString(string: "\n\n"))
         doc.append(buildAttributed(session.tokens, figurines: AppSettings.shared.figurines,
+                                   style: style,
                                    fenAt: { try? game.fenAt(id: $0) }).0)
         return doc
     }
@@ -306,30 +349,27 @@ struct NotationView: NSViewRepresentable {
         NSNumber(value: token.nodeId ?? 0)
     }
 
-    private static func moveAttributes(depth: UInt32) -> [NSAttributedString.Key: Any] {
+    private static func moveAttributes(depth: UInt32, style: Style) -> [NSAttributedString.Key: Any] {
         if depth == 0 {
-            return [
-                .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
-                .foregroundColor: NSColor.labelColor,
-            ]
+            return [.font: style.move, .foregroundColor: NSColor.labelColor]
         }
-        return variationAttributes(depth: depth)
+        return variationAttributes(depth: depth, style: style)
     }
 
-    private static func variationAttributes(depth: UInt32) -> [NSAttributedString.Key: Any] {
+    private static func variationAttributes(depth: UInt32, style: Style) -> [NSAttributedString.Key: Any] {
         [
-            .font: NSFont.systemFont(ofSize: 12),
+            .font: style.variation,
             .foregroundColor: depth <= 1 ? NSColor.secondaryLabelColor : NSColor.tertiaryLabelColor,
         ]
     }
 
-    private static func paragraphStyle(indent: CGFloat) -> NSParagraphStyle {
-        let style = NSMutableParagraphStyle()
-        style.firstLineHeadIndent = indent
-        style.headIndent = indent
-        style.paragraphSpacing = 3
-        style.lineSpacing = 1.5
-        return style
+    private static func paragraphStyle(indent: CGFloat, style: Style) -> NSParagraphStyle {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.firstLineHeadIndent = indent
+        paragraph.headIndent = indent
+        paragraph.paragraphSpacing = style.paragraphSpacing
+        paragraph.lineSpacing = style.lineSpacing
+        return paragraph
     }
 }
 

@@ -47,7 +47,9 @@ struct GameArea: View {
                 Divider()
                 if bottomPanelVisible {
                     VSplitView {
-                        NotationView(session: session, figurines: settings.figurines)
+                        NotationView(session: session, figurines: settings.figurines,
+                                 face: settings.notationFace,
+                                 size: settings.notationFontSize)
                             .frame(minHeight: 120)
                         if engine.panelVisible {
                             EnginePanel(engine: engine, session: session)
@@ -58,7 +60,9 @@ struct GameArea: View {
                         }
                     }
                 } else {
-                    NotationView(session: session, figurines: settings.figurines)
+                    NotationView(session: session, figurines: settings.figurines,
+                                 face: settings.notationFace,
+                                 size: settings.notationFontSize)
                 }
             }
             .frame(minWidth: 280)

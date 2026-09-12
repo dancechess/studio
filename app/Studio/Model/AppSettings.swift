@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 import Security
@@ -36,6 +37,80 @@ enum KeychainStore {
     }
 }
 
+/// Typefaces offered for the notation panel. Every one of them ships with
+/// macOS: a font that has to be downloaded is a font that silently renders
+/// as something else on the next Mac, and notation is the one text in this
+/// app a reader stares at for an hour.
+///
+/// Two of them are asked for by *design* rather than by name — New York and
+/// SF Mono are system faces whose family names are private (".AppleSystemUIFontSerif")
+/// and have changed between releases. Asking the system for a serif is
+/// stable; asking for a file name is not.
+enum NotationFace: String, CaseIterable, Identifiable, Sendable {
+    case newYork, system, charter, iowan, avenirNext, sfMono
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .newYork: return "New York"
+        case .system: return "System"
+        case .charter: return "Charter"
+        case .iowan: return "Iowan Old Style"
+        case .avenirNext: return "Avenir Next"
+        case .sfMono: return "SF Mono"
+        }
+    }
+
+    /// What it looks like, in three words, for the settings popup.
+    var note: String {
+        switch self {
+        case .newYork: return "serif, made for reading"
+        case .system: return "San Francisco"
+        case .charter: return "compact serif"
+        case .iowan: return "book serif"
+        case .avenirNext: return "geometric sans"
+        case .sfMono: return "monospaced"
+        }
+    }
+
+    fileprivate var design: NSFontDescriptor.SystemDesign? {
+        switch self {
+        case .newYork: return .serif
+        case .sfMono: return .monospaced
+        case .system: return .default
+        default: return nil
+        }
+    }
+
+    fileprivate var family: String? {
+        switch self {
+        case .charter: return "Charter"
+        case .iowan: return "Iowan Old Style"
+        case .avenirNext: return "Avenir Next"
+        default: return nil
+        }
+    }
+
+    /// The font, or the system font at the same size if this Mac turns out
+    /// not to have the family after all. A missing font must never mean a
+    /// missing notation panel.
+    func font(size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        let fallback = NSFont.systemFont(ofSize: size, weight: weight)
+        if let family {
+            var descriptor = NSFontDescriptor(fontAttributes: [.family: family])
+            if weight >= .semibold {
+                descriptor = descriptor.withSymbolicTraits(.bold)
+            }
+            return NSFont(descriptor: descriptor, size: size) ?? fallback
+        }
+        guard let design, let descriptor = fallback.fontDescriptor.withDesign(design) else {
+            return fallback
+        }
+        return NSFont(descriptor: descriptor, size: size) ?? fallback
+    }
+}
+
 /// User-level preferences. Small on purpose: the lichess bits the
 /// reference panel needs, and nothing that belongs in a game or a file.
 ///
@@ -55,6 +130,8 @@ final class AppSettings {
     private static let sourceKey = "referenceSource"
     private static let tokenAccount = "lichess-token"
     private static let figurinesKey = "figurineNotation"
+    private static let faceKey = "notationFace"
+    private static let fontSizeKey = "notationFontSize"
     private static let recentFilesKey = "recentFiles"
     private static let openFilesKey = "openFiles"
     /// Where to make one: a read-only token is enough.
@@ -87,6 +164,31 @@ final class AppSettings {
     var figurines: Bool {
         didSet { UserDefaults.standard.set(figurines, forKey: Self.figurinesKey) }
     }
+    /// The notation panel's typeface, and the size the main line is set
+    /// in. Everything else in the right-hand column is derived from this
+    /// one number, so the panel, the engine lines and the opening tree
+    /// stay in proportion rather than drifting apart.
+    var notationFace: NotationFace {
+        didSet { UserDefaults.standard.set(notationFace.rawValue, forKey: Self.faceKey) }
+    }
+    /// Clamped through `setNotationFontSize` rather than in a `didSet`:
+    /// @Observable rewrites stored properties as computed ones, so a
+    /// property assigning to itself in its own observer recurses until the
+    /// stack goes (the engine panel's +/- crashed exactly this way).
+    private(set) var notationFontSize: Double {
+        didSet { UserDefaults.standard.set(notationFontSize, forKey: Self.fontSizeKey) }
+    }
+
+    static let fontSizeRange: ClosedRange<Double> = 11...22
+
+    func setNotationFontSize(_ size: Double) {
+        notationFontSize = min(max(size.rounded(), Self.fontSizeRange.lowerBound),
+                               Self.fontSizeRange.upperBound)
+    }
+
+    /// Engine lines and opening-tree rows: a notch below the main line,
+    /// never below legibility.
+    var panelFontSize: Double { max(11, notationFontSize - 2) }
     /// Recently opened PGN paths, newest first (File ▸ Open Recent).
     private(set) var recentFiles: [String]
     /// The files open when the app last ran, in window order — reopened
@@ -124,6 +226,20 @@ final class AppSettings {
         lichessSpeeds = d.string(forKey: Self.speedsKey) ?? "blitz,rapid,classical"
         referenceSource = ReferenceSource(rawValue: d.string(forKey: Self.sourceKey) ?? "") ?? .database
         figurines = d.object(forKey: Self.figurinesKey) as? Bool ?? false
+        // resolved before the assignment, not after: a second write to one
+        // of these inside init goes through the observer and would save the
+        // screenshot run's font as the user's preference
+        var face = NotationFace(rawValue: d.string(forKey: Self.faceKey) ?? "") ?? .newYork
+        var fontSize = d.object(forKey: Self.fontSizeKey) as? Double ?? 14
+        // dev hook: DCS_NOTATION_FONT=charter:20 — a face and size for a
+        // screenshot run, left out of the saved preferences
+        if let env = ProcessInfo.processInfo.environment["DCS_NOTATION_FONT"], !env.isEmpty {
+            let parts = env.split(separator: ":")
+            if let parsed = NotationFace(rawValue: String(parts[0])) { face = parsed }
+            if parts.count > 1, let parsed = Double(parts[1]) { fontSize = parsed }
+        }
+        notationFace = face
+        notationFontSize = fontSize
         recentFiles = d.stringArray(forKey: Self.recentFilesKey) ?? []
         // first launch after the single-list days: the last list becomes the
         // first tab, so nothing the user had open goes missing

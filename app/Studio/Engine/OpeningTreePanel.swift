@@ -268,23 +268,26 @@ struct OpeningTreePanel: View {
         }
     }
 
+    /// In proportion with the notation panel above (see EnginePanel).
+    private var size: CGFloat { AppSettings.shared.panelFontSize }
+
     @ViewBuilder
     private func moveRow(_ row: TreeMove) -> some View {
         HStack(spacing: 8) {
             Text(row.san)
-                .font(.system(size: 12, weight: .semibold))
-                .frame(width: 56, alignment: .leading)
+                .font(.system(size: size, weight: .semibold))
+                .frame(width: (56 * size / 12).rounded(), alignment: .leading)
             Text("\(row.games)")
-                .font(.system(size: 12))
+                .font(.system(size: size))
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
-                .frame(width: 48, alignment: .trailing)
+                .frame(width: (48 * size / 12).rounded(), alignment: .trailing)
             scoreBar(row)
-                .frame(height: 12)
+                .frame(height: size)
             Text(scoreText(row))
-                .font(.system(size: 11))
+                .font(.system(size: size - 1))
                 .monospacedDigit()
-                .frame(width: 44, alignment: .trailing)
+                .frame(width: (44 * size / 12).rounded(), alignment: .trailing)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 3)

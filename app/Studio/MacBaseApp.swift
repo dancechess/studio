@@ -128,6 +128,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        // dev hook: show the Settings window for a screenshot run
+        if ProcessInfo.processInfo.environment["DCS_AUTO_SETTINGS"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                // the item SwiftUI's Settings scene installs, clicked the
+                // way the menu would: its action is private to SwiftUI, so
+                // sending a selector by name does nothing
+                guard let app = NSApp.mainMenu?.items.first?.submenu,
+                      let index = app.items.firstIndex(where: {
+                          $0.title.hasPrefix("Settings")
+                      }) else { return }
+                app.performActionForItem(at: index)
+            }
+        }
     }
 
     /// Finder / Dock hand-off (.pgn association, drag onto the Dock icon):
@@ -216,6 +229,10 @@ struct StudioApp: App {
         // the open files, or a blank board
         WindowGroup(id: "game", for: GameRef.self) { $ref in
             GameWindow(ref: ref ?? GameRef(path: nil, id: -1))
+        }
+        // ⌘, — the standard Mac home for "how it looks to me"
+        Settings {
+            SettingsView()
         }
     }
 }
