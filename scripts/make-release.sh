@@ -11,7 +11,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${VERSION:-0.2.0}"
+# The release workflow passes VERSION from the tag. A local build falls
+# back to the newest tag rather than a number written here, which went
+# stale: 0.3.0 built on this machine called itself 0.2.0 in Finder.
+VERSION="${VERSION:-$(git -C "$ROOT" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')}"
+VERSION="${VERSION:-0.0.0-dev}"
 NAME="DC-Studio-$VERSION-arm64"
 APP="$ROOT/dist/DC Studio.app"
 DMG="$ROOT/dist/$NAME.dmg"

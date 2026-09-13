@@ -6,7 +6,11 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="$ROOT/dist/DC Studio.app"
-VERSION="${VERSION:-0.2.0}"   # scripts/make-release.sh overrides this from the tag
+# The release workflow passes VERSION from the tag. A local build falls
+# back to the newest tag rather than a number written here, which went
+# stale: 0.3.0 built on this machine called itself 0.2.0 in Finder.
+VERSION="${VERSION:-$(git -C "$ROOT" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')}"
+VERSION="${VERSION:-0.0.0-dev}"
 
 "$ROOT/scripts/build-core.sh" >/dev/null
 (cd "$ROOT/app" && swift build -c release)
