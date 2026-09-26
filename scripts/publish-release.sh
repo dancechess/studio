@@ -68,3 +68,18 @@ gh release create "$TAG" \
     --title "DC Studio $VERSION" \
     --notes-file dist/NOTES.md \
     "$DMG" "$DMG.sha256"
+
+# The website sends every download through dancechess.com/dl/dmg, which is a
+# redirect carrying this version number — it has to move with the release or
+# the download button keeps handing out the previous one.
+DL_RULE="$HOME/dancechess.github.com/www/tools/dl-rule.py"
+if [ -x "$DL_RULE" ]; then
+    "$DL_RULE" "$VERSION"
+else
+    echo "note: update dancechess.com/dl/dmg by hand — tools/dl-rule.py not found"
+fi
+echo
+echo "still to do by hand:"
+echo "  www:  python3 tools/changelog.py && commit && push"
+echo "  tap:  version + sha256 in Casks/d/dc-studio.rb, then push"
+echo "        sha256 $(cut -d' ' -f1 "$DMG.sha256")"
