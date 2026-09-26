@@ -789,6 +789,19 @@ mod tests {
     }
 
     #[test]
+    fn a_broken_fen_header_never_leaves_this_crate() {
+        // The engine is handed fen_at()'s output and nothing else, which
+        // matters more since Stockfish 19: where 18 ignored a FEN it could
+        // not parse, 19 prints "CRITICAL ERROR" and exits, taking the
+        // analysis panel with it. So a header we cannot parse has to fail
+        // here rather than be passed along verbatim.
+        let pgn = "[SetUp \"1\"]\n[FEN \"not-a-fen\"]\n\n*";
+        let g = Game::from_pgn(pgn.into()).unwrap();
+        assert!(g.fen_at(0).is_err(), "a bad root FEN must not serialize");
+        assert!(g.legal_moves_at(0).is_err());
+    }
+
+    #[test]
     fn null_moves_parse_replay_and_round_trip() {
         // analysis PGNs from other tools carry "--" (or Z0) for "pass";
         // the tree must hold it, replay past it, and write it back
