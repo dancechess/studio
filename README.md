@@ -45,7 +45,13 @@ Website: [dancechess.com/studio](https://dancechess.com/studio/) ·
 
 ## Install
 
-Download the latest `DC-Studio-<version>-arm64.dmg` from
+```sh
+brew tap dancechess/tap
+brew trust --cask dancechess/tap/dc-studio   # Homebrew asks before loading a third-party tap
+brew install --cask dc-studio
+```
+
+Or download the latest `DC-Studio-<version>-arm64.dmg` from
 [Releases](https://github.com/dancechess/studio/releases/latest), open it, and
 drag **DC Studio** into Applications. Apple Silicon Mac, macOS 14 (Sonoma) or
 later — there is no Intel build. Stockfish rides along inside the bundle, so
