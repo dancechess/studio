@@ -75,10 +75,10 @@ cd app && swift run StudioApp     # run the app from the CLI
 
 An Xcode project is optional: `brew install xcodegen && xcodegen -s app/project.yml`.
 
-Cutting a release: `VERSION=0.2.0 ./scripts/make-release.sh` builds the DMG on
-your machine; pushing a `v*` tag runs that same script on a GitHub Actions
-runner and publishes the DMG to Releases
-(see [.github/workflows/release.yml](.github/workflows/release.yml)).
+Cutting a release: `./scripts/publish-release.sh v0.3.1` — it builds, signs,
+notarizes and staples, refuses to publish anything Gatekeeper would reject,
+and takes the release notes from the annotated tag's message. It runs on a
+machine holding the Developer ID key, not on a runner; CI only tests.
 
 ## Good to know
 

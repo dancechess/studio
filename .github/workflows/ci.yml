@@ -2,8 +2,13 @@ name: CI
 
 # Every pull request and every push to main: the Rust tests, the Swift
 # build against freshly generated bindings, and the end-to-end smoke run
-# with a real Stockfish. Same machine and setup as the release workflow, so
-# a green check here means the release build will get through too.
+# with a real Stockfish.
+#
+# CI does not cut releases. A release has to be signed with a Developer ID
+# and notarized, and the key for that lives in one Mac's keychain rather than
+# in this repository's secrets — so `scripts/publish-release.sh` runs there.
+# A runner could still build a DMG, but an unsigned one is not the artifact
+# anybody should be handed.
 on:
   pull_request:
   push:
