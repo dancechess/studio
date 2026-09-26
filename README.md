@@ -51,23 +51,9 @@ drag **DC Studio** into Applications. Apple Silicon Mac, macOS 14 (Sonoma) or
 later — there is no Intel build. Stockfish rides along inside the bundle, so
 there is nothing else to install.
 
-The app is ad-hoc signed but **not notarized** — there is no paid Apple
-Developer account behind this project — so the first launch is blocked with:
-
-> Apple could not verify "DC Studio" is free of malware that may harm your Mac
-> or compromise your privacy.
-
-That dialog offers no way to continue. Dismiss it — **without** letting it move
-the app to the trash — and then do one of:
-
-```bash
-xattr -dr com.apple.quarantine "/Applications/DC Studio.app"
-```
-
-...after which it opens normally. Or, without the terminal: open **System
-Settings ▸ Privacy & Security**, scroll down to the Security section, and click
-**Open Anyway** next to the message about DC Studio. That button only appears
-after you have tried to open the app at least once.
+The app is signed with a Developer ID and notarized by Apple, so it opens the
+way anything else you download does — no terminal incantation, no trip through
+Privacy & Security.
 
 ## Building
 

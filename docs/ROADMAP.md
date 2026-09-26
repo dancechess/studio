@@ -105,8 +105,6 @@ game, which is what makes studies and tactics puzzles usable.
 
 ## Known gaps
 
-- **Not notarized.** The released build is ad-hoc signed, so macOS quarantines
-  it on first launch. See the install notes in the README.
 - **Apple Silicon only.** No Intel build.
 - **A source file edited outside the app while it is closed here is taken as
   the truth.** Cache freshness is a modification-time comparison made when

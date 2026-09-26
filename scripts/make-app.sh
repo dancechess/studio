@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Assembles "dist/DC Studio.app" from the SPM release build — no Xcode needed.
-# Ad-hoc signed; for public distribution re-sign with a Developer ID and
-# notarize (xcrun notarytool, present in the Command Line Tools).
+#
+# Signing: a Developer ID identity in the keychain is picked up automatically
+# and brings the hardened runtime and a secure timestamp with it, which is
+# what notarization requires. With no such identity the build falls back to
+# an ad-hoc signature — fine to run on this machine, refused by Gatekeeper
+# anywhere else. SIGN_ID overrides the choice; SIGN_ID=- forces ad-hoc.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -59,10 +63,41 @@ cp "$ROOT/assets/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 STOCKFISH="$(command -v stockfish || true)"
 if [ -n "$STOCKFISH" ]; then
     cp "$STOCKFISH" "$APP/Contents/Resources/stockfish"
-    codesign --force --sign - "$APP/Contents/Resources/stockfish"
 else
     echo "warn: no stockfish on PATH — engine panel will need a brew install"
 fi
 
-codesign --force --sign - "$APP"
+# --- signing ---------------------------------------------------------------
+# Inside out: every nested executable first, the app last. Signing the outer
+# bundle seals what is inside it, so a later signature on an inner binary
+# invalidates the outer one.
+SIGN_ID="${SIGN_ID:-$(security find-identity -v -p codesigning 2>/dev/null |
+    awk -F'"' '/Developer ID Application/ { print $2; exit }')}"
+SIGN_ID="${SIGN_ID:--}"
+
+if [ "$SIGN_ID" = "-" ]; then
+    OPTS=()
+    echo "signing: ad-hoc (no Developer ID identity found)"
+else
+    # --options runtime is the hardened runtime, and --timestamp asks Apple's
+    # timestamp server for a countersignature. Notarization rejects a build
+    # missing either, and a timestamp is what keeps already-shipped copies
+    # valid after the certificate itself expires.
+    OPTS=(--options runtime --timestamp)
+    echo "signing: $SIGN_ID"
+fi
+
+sign() { codesign --force --sign "$SIGN_ID" "${OPTS[@]+"${OPTS[@]}"}" "$@"; }
+
+if [ -f "$APP/Contents/Resources/stockfish" ]; then
+    sign "$APP/Contents/Resources/stockfish"
+fi
+# Nothing else to sign: the only Mach-O files in the bundle are the main
+# executable and stockfish. SPM's resource bundle is a flat directory of
+# images with no Info.plist, which codesign refuses outright ("bundle format
+# unrecognized") and which needs no signature — signing the app seals it into
+# CodeResources like any other resource.
+sign "$APP"
+
+codesign --verify --strict --deep "$APP"
 echo "built: $APP"
