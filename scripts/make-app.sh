@@ -67,6 +67,20 @@ else
     echo "warn: no stockfish on PATH — engine panel will need a brew install"
 fi
 
+# --- the app must not depend on this machine --------------------------------
+# Every release up to 0.3.2 linked libdancechess_core.dylib by its absolute
+# path in core/target, because cargo emits both an archive and a dylib and
+# `-l` picks the dylib. Those builds ran here and nowhere else. Nobody
+# reported it, because the app only fails once it is on somebody else's Mac
+# — so the check belongs in the build, not in a test somebody remembers to
+# run.
+deps="$(otool -L "$APP/Contents/MacOS/DCStudio" | tail -n +2)"
+if echo "$deps" | grep -qE "/Users/|target/release|@rpath"; then
+    echo "refusing to build: the executable links something outside the bundle:"
+    echo "$deps" | grep -E "/Users/|target/release|@rpath"
+    exit 1
+fi
+
 # --- signing ---------------------------------------------------------------
 # Inside out: every nested executable first, the app last. Signing the outer
 # bundle seals what is inside it, so a later signature on an inner binary

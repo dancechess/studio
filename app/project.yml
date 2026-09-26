@@ -28,8 +28,7 @@ targets:
         SWIFT_VERSION: "5.10"
         # where the uniffi-generated module.modulemap lives
         SWIFT_INCLUDE_PATHS: $(SRCROOT)/Generated/include
-        LIBRARY_SEARCH_PATHS: $(SRCROOT)/../core/target/release
-        OTHER_LDFLAGS: ["-ldancechess_core"]
+        OTHER_LDFLAGS: ["$(SRCROOT)/../core/target/release/libdancechess_core.a"]
         CODE_SIGN_IDENTITY: "-"
         ENABLE_HARDENED_RUNTIME: true
     entitlements:

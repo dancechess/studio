@@ -26,8 +26,13 @@ let package = Package(
             path: "Generated",
             sources: ["dancechess_core.swift"],
             linkerSettings: [
-                .unsafeFlags(["-L\(rustLib)"]),
-                .linkedLibrary("dancechess_core"),
+                // The archive by path, not -ldancechess_core: cargo emits both
+                // a .a and a .dylib, ld picks the .dylib, and records it by
+                // its absolute path in this build directory — an app that
+                // launches on the machine that built it and nowhere else.
+                // (Hardened runtime then refuses it even here, because the
+                // dylib carries no Team ID. That is how this was found.)
+                .unsafeFlags(["\(rustLib)/libdancechess_core.a"]),
             ]
         ),
         // UCI engine subprocess management (pure Foundation, no UI)
