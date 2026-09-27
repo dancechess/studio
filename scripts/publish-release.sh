@@ -72,7 +72,7 @@ gh release create "$TAG" \
 # The website sends every download through dancechess.com/dl/dmg, which is a
 # redirect carrying this version number — it has to move with the release or
 # the download button keeps handing out the previous one.
-DL_RULE="$HOME/dancechess.github.com/www/tools/dl-rule.py"
+DL_RULE="$HOME/dancechess.github.com/product/www/tools/dl-rule.py"
 if [ -x "$DL_RULE" ]; then
     "$DL_RULE" "$VERSION"
 else
